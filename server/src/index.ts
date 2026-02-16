@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import authRoutes from './routes/authRoutes';
@@ -11,6 +12,14 @@ import aiRoutes from './routes/aiRoutes';
 import bookingRoutes from './routes/bookingRoutes';
 import messageRoutes from './routes/messageRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import eventRoutes from './routes/eventRoutes';
+import paymentRoutes from './routes/paymentRoutes';
+import communityRoutes from './routes/communityRoutes';
+import verificationRoutes from './routes/verificationRoutes';
+import fundingRoutes from './routes/fundingRoutes';
+import cofounderRoutes from './routes/cofounderRoutes';
+import newsRoutes from './routes/newsRoutes';
+import podcastRoutes from './routes/podcastRoutes';
 
 dotenv.config();
 
@@ -22,7 +31,7 @@ const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
     : ['http://localhost:3000', 'http://localhost:5173'];
 
-const io = new Server(httpServer, {
+export const io = new Server(httpServer, {
     cors: {
         origin: allowedOrigins,
         methods: ['GET', 'POST'],
@@ -45,6 +54,10 @@ app.use(cors({
     credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // Socket.io connection
 io.on('connection', (socket) => {
@@ -92,6 +105,14 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/communities', communityRoutes);
+app.use('/api/verification', verificationRoutes);
+app.use('/api/funding', fundingRoutes);
+app.use('/api/cofounders', cofounderRoutes);
+app.use('/api/news', newsRoutes);
+app.use('/api/podcasts', podcastRoutes);
 
 // Health check route (important for Render deployment)
 app.get('/', (req, res) => {

@@ -74,7 +74,7 @@ export function WhyChooseSection() {
   const rotate2 = useTransform(scrollYProgress, [0, 1], [360, 0]);
 
   return (
-    <section id="why-choose" ref={containerRef} className="relative bg-white py-24 overflow-hidden">
+    <section id="why-choose" ref={containerRef} className="relative bg-white py-24 overflow-hidden" style={{ position: 'relative' }}>
       {/* Continue Vertical Dashed Lines */}
       <div className="absolute inset-0 pointer-events-none z-0">
         <div className="max-w-7xl mx-auto h-full relative px-8">

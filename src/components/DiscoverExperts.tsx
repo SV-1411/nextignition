@@ -18,7 +18,6 @@ import {
   Target,
   Briefcase
 } from 'lucide-react';
-import { useState } from 'react';
 import { brandColors } from '../utils/colors';
 import { ProfileViewModal } from './ProfileViewModal';
 
@@ -76,11 +75,10 @@ export function DiscoverExperts() {
           topSkills: u.profile.skills || [],
         }));
 
-        // Merge with mock experts for design demo
-        setExperts([...realExperts, ...mockExperts]);
+        setExperts(realExperts);
       } catch (error) {
         console.error('Failed to fetch experts', error);
-        setExperts(mockExperts);
+        setExperts([]);
       } finally {
         setLoading(false);
       }
@@ -123,117 +121,6 @@ export function DiscoverExperts() {
     { value: 'price-high', label: 'Price: High to Low' },
     { value: 'experience', label: 'Most Experienced' },
     { value: 'sessions', label: 'Most Sessions' },
-  ];
-
-  const mockExperts: Expert[] = [
-    {
-      id: 1,
-      name: 'Dr. Michael Johnson',
-      avatar: 'MJ',
-      title: 'Former VP of Product at Google',
-      specialization: ['Product Strategy', 'Fundraising', 'Team Building'],
-      rating: 4.9,
-      totalReviews: 127,
-      hourlyRate: '$500',
-      yearsExperience: 15,
-      sessionsCompleted: 248,
-      responseTime: '<2 hrs',
-      availability: 'Available',
-      featured: true,
-      verified: true,
-      expertise: 'Helped 50+ startups raise $200M+ in funding',
-      topSkills: ['Product-Market Fit', 'Fundraising', 'Scaling Teams'],
-    },
-    {
-      id: 2,
-      name: 'Sarah Martinez',
-      avatar: 'SM',
-      title: 'Growth Marketing Expert',
-      specialization: ['Growth Marketing', 'Sales Strategy'],
-      rating: 4.8,
-      totalReviews: 95,
-      hourlyRate: '$350',
-      yearsExperience: 10,
-      sessionsCompleted: 186,
-      responseTime: '<3 hrs',
-      availability: 'Available',
-      featured: true,
-      verified: true,
-      expertise: 'Scaled 3 startups from 0 to $10M ARR',
-      topSkills: ['Growth Hacking', 'SEO/SEM', 'Conversion Optimization'],
-    },
-    {
-      id: 3,
-      name: 'James Chen',
-      avatar: 'JC',
-      title: 'Technical Co-founder & CTO',
-      specialization: ['Technical Architecture', 'Team Building'],
-      rating: 4.9,
-      totalReviews: 142,
-      hourlyRate: '$450',
-      yearsExperience: 12,
-      sessionsCompleted: 203,
-      responseTime: '<1 hr',
-      availability: 'Limited',
-      featured: false,
-      verified: true,
-      expertise: 'Built engineering teams at 5 successful startups',
-      topSkills: ['System Architecture', 'Team Hiring', 'Tech Stack'],
-    },
-    {
-      id: 4,
-      name: 'Emily Rodriguez',
-      avatar: 'ER',
-      title: 'UI/UX Design Lead',
-      specialization: ['UI/UX Design', 'Product Strategy'],
-      rating: 4.7,
-      totalReviews: 78,
-      hourlyRate: '$300',
-      yearsExperience: 8,
-      sessionsCompleted: 134,
-      responseTime: '<4 hrs',
-      availability: 'Available',
-      featured: false,
-      verified: true,
-      expertise: 'Award-winning designer with 100+ product launches',
-      topSkills: ['User Research', 'Design Systems', 'Prototyping'],
-    },
-    {
-      id: 5,
-      name: 'David Park',
-      avatar: 'DP',
-      title: 'Legal & Compliance Advisor',
-      specialization: ['Legal & Compliance', 'Fundraising'],
-      rating: 4.8,
-      totalReviews: 89,
-      hourlyRate: '$400',
-      yearsExperience: 14,
-      sessionsCompleted: 156,
-      responseTime: '<3 hrs',
-      availability: 'Available',
-      featured: false,
-      verified: true,
-      expertise: 'Former startup lawyer at top Silicon Valley firm',
-      topSkills: ['Term Sheets', 'IP Protection', 'Compliance'],
-    },
-    {
-      id: 6,
-      name: 'Lisa Anderson',
-      avatar: 'LA',
-      title: 'Sales Strategy Coach',
-      specialization: ['Sales Strategy', 'Growth Marketing'],
-      rating: 4.9,
-      totalReviews: 112,
-      hourlyRate: '$380',
-      yearsExperience: 11,
-      sessionsCompleted: 198,
-      responseTime: '<2 hrs',
-      availability: 'Limited',
-      featured: true,
-      verified: true,
-      expertise: 'Built sales teams generating $500M+ revenue',
-      topSkills: ['B2B Sales', 'Sales Processes', 'Lead Generation'],
-    },
   ];
 
   const toggleFilter = (category: keyof typeof filters, value: string) => {

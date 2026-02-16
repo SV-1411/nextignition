@@ -4,6 +4,9 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { VerificationBanner } from './VerificationBanner';
 import { StoryViewer, StoryData } from './StoryViewer';
 import { useState, useRef, useEffect } from 'react';
+import api from '../services/api';
+import { getCurrentUser } from '../services/authService';
+import { io as socketIOClient } from 'socket.io-client';
 import {
   Plus,
   Users,
@@ -54,7 +57,8 @@ interface Story {
 }
 
 interface Post {
-  id: number;
+  id: string;
+  apiId?: string;
   author: {
     name: string;
     avatar: string;
@@ -96,196 +100,228 @@ interface Post {
 
 interface EnhancedHomeFeedProps {
   userType?: 'founder' | 'investor' | 'expert' | 'cofounder';
+  openCreateModal?: boolean;
+  onCreateModalClose?: () => void;
 }
 
-export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps) {
+interface ApiFeedPost {
+  _id: string;
+  author?: {
+    _id: string;
+    name: string;
+    role?: string;
+    avatar?: string;
+  };
+  content: string;
+  image?: string;
+  createdAt: string;
+  likes?: string[];
+  comments?: { user: string; text: string; createdAt: string }[];
+}
+
+export function EnhancedHomeFeed({ userType = 'founder', openCreateModal, onCreateModalClose }: EnhancedHomeFeedProps) {
   const [activeFilter, setActiveFilter] = useState('Following');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedPostType, setSelectedPostType] = useState<Post['type']>('text');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
-  const [playingVideo, setPlayingVideo] = useState<number | null>(null);
+  const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [showAIEnhancer, setShowAIEnhancer] = useState(false);
   const [postContent, setPostContent] = useState('');
   const [aiEnhancedVersions, setAiEnhancedVersions] = useState<string[]>([]);
   const [showVerificationBanner, setShowVerificationBanner] = useState(true);
   const [isVerified, setIsVerified] = useState(false); // Always show banner by default
-  const [commentText, setCommentText] = useState<{ [key: number]: string }>({});
-  const [expandedPost, setExpandedPost] = useState<number | null>(null);
-  const [showConfetti, setShowConfetti] = useState<number | null>(null);
-  const [mutedVideo, setMutedVideo] = useState<number | null>(null);
-  const videoRefs = useRef<{ [key: number]: HTMLVideoElement | null }>({});
-  const [openPostMenu, setOpenPostMenu] = useState<number | null>(null);
+  const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
+  const [expandedPost, setExpandedPost] = useState<string | null>(null);
+  const [showConfetti, setShowConfetti] = useState<string | null>(null);
+  const [mutedVideo, setMutedVideo] = useState<string | null>(null);
+  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+  const [openPostMenu, setOpenPostMenu] = useState<string | null>(null);
   const postMenuRef = useRef<HTMLDivElement | null>(null);
   const [showStoryViewer, setShowStoryViewer] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
 
+  const currentUser = getCurrentUser();
+  const currentUserId: string | null = currentUser?._id || null;
+  const currentUserName: string = currentUser?.name || 'You';
+  const currentUserInitials: string = (currentUserName || 'You')
+    .split(' ')
+    .filter(Boolean)
+    .map((p: string) => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  const mapApiPostToUi = (p: ApiFeedPost): Post => {
+    const created = new Date(p.createdAt);
+    const timestamp = created.toLocaleString();
+    const likesArr = p.likes || [];
+    const isLiked = currentUserId ? likesArr.includes(currentUserId) : false;
+
+    return {
+      id: p._id,
+      apiId: p._id,
+      author: {
+        name: p.author?.name || 'User',
+        avatar: p.author?.avatar || (p.author?.name ? p.author.name.charAt(0).toUpperCase() : 'U'),
+        title: p.author?.role || 'Member',
+        verified: true,
+      },
+      timestamp,
+      type: 'text',
+      content: p.content || '',
+      images: p.image ? [p.image] : undefined,
+      likes: likesArr.length,
+      comments: (p.comments || []).length,
+      shares: 0,
+      isLiked,
+      isBookmarked: false,
+    };
+  };
+
   const feedFilters = ['Following', 'Discover', 'Trending', 'Saved'];
 
   const stories: StoryData[] = [
-    { id: 1, author: 'You', avatar: 'YU', image: '', timestamp: '', viewed: false, content: 'Add your story' },
-    { id: 2, author: 'Sarah C.', avatar: 'SC', image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=800', timestamp: '2h ago', viewed: false, content: '🎉 Just closed our seed round! Grateful for the community support.' },
-    { id: 3, author: 'Mike R.', avatar: 'MR', image: 'https://images.unsplash.com/photo-1556157382-97eda2d62296?w=800', timestamp: '4h ago', viewed: true, content: 'Product launch day! Check out our new features 🚀' },
-    { id: 4, author: 'Emma W.', avatar: 'EW', image: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=800', timestamp: '6h ago', viewed: false, content: 'Attended an amazing startup event today! 💡' },
-    { id: 5, author: 'Alex T.', avatar: 'AT', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800', timestamp: '8h ago', viewed: false, content: 'Building in public - Day 30 of our journey' },
-    { id: 6, author: 'Lisa M.', avatar: 'LM', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=800', timestamp: '10h ago', viewed: true, content: 'Mentoring session was incredibly insightful! 🌟' },
-    { id: 7, author: 'James K.', avatar: 'JK', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=800', timestamp: '12h ago', viewed: false, content: 'Hit 10K users today! Thank you all for the support ❤️' },
-  ];
-
-  const trendingTopics = [
-    { tag: '#AIStartups', posts: 1234, trend: '+12%' },
-    { tag: '#SeedFunding', posts: 892, trend: '+8%' },
-    { tag: '#ProductLaunch', posts: 567, trend: '+24%' },
-    { tag: '#StartupTips', posts: 2341, trend: '+5%' },
-    { tag: '#Networking', posts: 445, trend: '+15%' },
-  ];
-
-  const suggestedConnections = [
-    { name: 'David Park', title: 'Angel Investor', mutual: '12 mutual', avatar: 'DP' },
-    { name: 'Lisa Zhang', title: 'UX Designer', mutual: '8 mutual', avatar: 'LZ' },
-    { name: 'James Miller', title: 'Marketing Expert', mutual: '15 mutual', avatar: 'JM' },
-  ];
-
-  const mockPosts: Post[] = [
     {
       id: 1,
-      author: {
-        name: 'Sarah Chen',
-        avatar: 'SC',
-        title: 'Founder at TechFlow AI',
-        verified: true,
-      },
-      timestamp: '2h ago',
-      type: 'milestone',
-      content: 'Just closed our seed round! 🎉 Grateful for all the mentorship from the NextIgnition community. Here\'s what I learned about pitching to VCs...',
-      milestone: {
-        title: '💰 Seed Round Closed',
-        description: '$2M raised',
-        icon: Trophy,
-        color: brandColors.atomicOrange,
-      },
-      likes: 124,
-      comments: 18,
-      shares: 7,
-      isLiked: false,
-      isBookmarked: false,
-    },
-    {
-      id: 2,
-      author: {
-        name: 'Marcus Williams',
-        avatar: 'MW',
-        title: 'Co-founder at GreenScale',
-        verified: true,
-      },
-      timestamp: '5h ago',
-      type: 'text',
-      content: 'Looking for a technical co-founder with experience in blockchain and sustainability. Our vision is to revolutionize carbon credit trading. DM if interested! 🌱\n\nWhat we\'re building:\n- Decentralized carbon credit marketplace\n- Real-time emissions tracking\n- AI-powered carbon offset recommendations\n- Smart contracts for transparent trading\n\nIdeal co-founder profile:\n- 3+ years blockchain development\n- Experience with Ethereum/Solidity\n- Passionate about climate tech\n- Previous startup experience is a plus\n\nWe already have:\n- Product roadmap & wireframes\n- Initial partnerships with 3 carbon registries\n- LOIs from 5 enterprise customers\n- $500K in personal funding committed\n\nLet\'s change the world together! 🚀',
-      likes: 89,
-      comments: 32,
-      shares: 12,
-      isLiked: true,
-      isBookmarked: false,
-    },
-    {
-      id: 3,
-      author: {
-        name: 'Emily Rodriguez',
-        avatar: 'ER',
-        title: 'Growth Lead at StartupHub',
-        verified: false,
-      },
-      timestamp: '1d ago',
-      type: 'image',
-      content: 'Our team offsite was absolutely amazing! Building great products starts with building great teams. 💪',
-      images: [
-        'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800',
-        'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800',
-        'https://images.unsplash.com/photo-1531497865144-0464ef8fb9a9?w=800',
-        'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=800',
-      ],
-      likes: 256,
-      comments: 45,
-      shares: 23,
-      isLiked: false,
-      isBookmarked: true,
-    },
-    {
-      id: 4,
-      author: {
-        name: 'Alex Thompson',
-        avatar: 'AT',
-        title: 'Product Designer',
-        verified: true,
-      },
-      timestamp: '2d ago',
-      type: 'poll',
-      content: 'Quick poll for fellow founders: What\'s your biggest challenge right now?',
-      poll: {
-        question: 'What\'s your biggest challenge right now?',
-        options: [
-          { text: 'Finding product-market fit', votes: 45, percentage: 38 },
-          { text: 'Fundraising', votes: 32, percentage: 27 },
-          { text: 'Hiring the right team', votes: 28, percentage: 23 },
-          { text: 'Marketing & growth', votes: 14, percentage: 12 },
-        ],
-        totalVotes: 119,
-        userVoted: null,
-      },
-      likes: 67,
-      comments: 28,
-      shares: 5,
-      isLiked: false,
-      isBookmarked: false,
-    },
-    {
-      id: 5,
-      author: {
-        name: 'Jennifer Park',
-        avatar: 'JP',
-        title: 'Serial Entrepreneur',
-        verified: true,
-      },
-      timestamp: '3d ago',
-      type: 'video',
-      content: 'Here\'s a behind-the-scenes look at our product development process. From ideation to launch in 6 weeks! ',
-      video: {
-        url: 'https://example.com/video.mp4',
-        thumbnail: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800',
-        duration: '3:24',
-      },
-      likes: 342,
-      comments: 56,
-      shares: 89,
-      isLiked: true,
-      isBookmarked: true,
-    },
-    {
-      id: 6,
-      author: {
-        name: 'David Kim',
-        avatar: 'DK',
-        title: 'Investor at Sequoia Capital',
-        verified: true,
-      },
-      timestamp: '4d ago',
-      type: 'document',
-      content: 'Sharing our updated investment thesis for 2024. Key focus areas: AI infrastructure, climate tech, and developer tools. 📄',
-      document: {
-        title: 'Investment_Thesis_2024.pdf',
-        type: 'PDF',
-        size: '2.4 MB',
-      },
-      likes: 189,
-      comments: 41,
-      shares: 67,
-      isLiked: false,
-      isBookmarked: true,
+      author: currentUserName,
+      avatar: currentUserInitials,
+      image: '',
+      timestamp: '',
+      viewed: false,
+      content: 'Add your story',
     },
   ];
 
-  const [posts, setPosts] = useState<Post[]>(mockPosts);
+  const trendingTopics: { tag: string; posts: number; trend: string }[] = [];
+
+  const suggestedConnections: { name: string; title: string; mutual: string; avatar: string }[] = [];
+
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedError, setFeedError] = useState<string>('');
+  const [postSubmitting, setPostSubmitting] = useState(false);
+  const [createPostError, setCreatePostError] = useState<string>('');
+
+  useEffect(() => {
+    if (openCreateModal) {
+      setShowCreateModal(true);
+      setCreatePostError('');
+    }
+  }, [openCreateModal]);
+
+  const fetchFeed = async () => {
+    setFeedLoading(true);
+    setFeedError('');
+    try {
+      const resp = await api.get('/feed');
+      const mapped = (resp.data as ApiFeedPost[]).map(mapApiPostToUi);
+      setPosts(mapped);
+    } catch (err: any) {
+      setFeedError(err.response?.data?.message || 'Failed to load feed');
+      setPosts([]);
+    } finally {
+      setFeedLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFeed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const apiBase = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000/api';
+    const socketBase = String(apiBase).replace(/\/+api\/?$/, '');
+
+    const socket = socketIOClient(socketBase, {
+      transports: ['websocket'],
+    });
+
+    socket.on('feed_post_shared', (payload: { postId: string; shares: number }) => {
+      if (!payload?.postId) return;
+      setPosts((prev) => prev.map((p) => (p.apiId === payload.postId || p.id === payload.postId ? { ...p, shares: payload.shares } : p)));
+    });
+
+    socket.on('feed_post_created', (newPost: ApiFeedPost) => {
+      if (!newPost?._id) return;
+      if (currentUserId && newPost.author?._id === currentUserId) return;
+
+      setPosts((prev) => {
+        if (prev.some((p) => p.apiId === newPost._id || p.id === newPost._id)) return prev;
+        const mapped = mapApiPostToUi(newPost);
+        return [mapped, ...prev];
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
+
+  const handleSharePost = async (post: Post) => {
+    if (!post.apiId) return;
+
+    try {
+      const shareUrl = `${window.location.origin}/post/${post.apiId}`;
+      const shareText = `${post.author.name}: ${post.content}`;
+
+      await api.post(`/feed/${post.apiId}/share`);
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: 'NextIgnition Post', text: shareText, url: shareUrl });
+        } catch {
+          // user cancelled
+        }
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+      }
+    } catch {
+      // best-effort
+    }
+  };
+
+  const handleCreatePost = async () => {
+    const content = postContent.trim();
+    if (!content) return;
+    setCreatePostError('');
+    setPostSubmitting(true);
+    try {
+      const resp = await api.post('/feed', { content });
+      const created = mapApiPostToUi(resp.data as ApiFeedPost);
+      setPosts((prev) => [created, ...prev]);
+      setPostContent('');
+      setShowCreateModal(false);
+      onCreateModalClose?.();
+      setFeedError('');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Failed to create post';
+      setCreatePostError(msg);
+      setFeedError(msg);
+    } finally {
+      setPostSubmitting(false);
+    }
+  };
+
+  const handleAddComment = async (postId: string) => {
+    const text = (commentText[postId] || '').trim();
+    if (!text) return;
+
+    const target = posts.find((p) => p.id === postId);
+    if (!target?.apiId) return;
+
+    try {
+      await api.post(`/feed/${target.apiId}/comment`, { text });
+      setCommentText((prev) => ({ ...prev, [postId]: '' }));
+      fetchFeed();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Failed to add comment';
+      setFeedError(msg);
+    }
+  };
 
   const postTypes = [
     { type: 'text' as const, icon: FileText, label: 'Text', color: brandColors.navyBlue },
@@ -296,15 +332,31 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
     { type: 'document' as const, icon: FileText, label: 'Document', color: '#8b5cf6' },
   ];
 
-  const handleLike = (postId: number) => {
-    setPosts(posts.map(post => 
-      post.id === postId 
+  const handleLike = async (postId: string) => {
+    const target = posts.find((p) => p.id === postId);
+    if (!target?.apiId) {
+      setPosts(posts.map(post =>
+        post.id === postId
+          ? { ...post, isLiked: !post.isLiked, likes: post.isLiked ? post.likes - 1 : post.likes + 1 }
+          : post
+      ));
+      return;
+    }
+
+    setPosts(posts.map(post =>
+      post.id === postId
         ? { ...post, isLiked: !post.isLiked, likes: post.isLiked ? post.likes - 1 : post.likes + 1 }
         : post
     ));
+
+    try {
+      await api.post(`/feed/${target.apiId}/like`);
+    } catch {
+      // best-effort; keep optimistic UI
+    }
   };
 
-  const handleBookmark = (postId: number) => {
+  const handleBookmark = (postId: string) => {
     setPosts(posts.map(post => 
       post.id === postId 
         ? { ...post, isBookmarked: !post.isBookmarked }
@@ -312,7 +364,7 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
     ));
   };
 
-  const handleVote = (postId: number, optionIndex: number) => {
+  const handleVote = (postId: string, optionIndex: number) => {
     setPosts(posts.map(post => {
       if (post.id === postId && post.poll) {
         const newOptions = post.poll.options.map((opt, idx) => ({
@@ -337,7 +389,7 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
     }));
   };
 
-  const toggleVideo = (postId: number) => {
+  const toggleVideo = (postId: string) => {
     const video = videoRefs.current[postId];
     if (video) {
       if (playingVideo === postId) {
@@ -350,7 +402,7 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
     }
   };
 
-  const toggleMute = (postId: number) => {
+  const toggleMute = (postId: string) => {
     const video = videoRefs.current[postId];
     if (video) {
       video.muted = !video.muted;
@@ -379,20 +431,20 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
     }
   }, [openPostMenu]);
 
-  const handleDeletePost = (postId: number) => {
+  const handleDeletePost = (postId: string) => {
     if (window.confirm('Are you sure you want to delete this post?')) {
       setPosts(posts.filter(p => p.id !== postId));
       setOpenPostMenu(null);
     }
   };
 
-  const handleCopyLink = (postId: number) => {
+  const handleCopyLink = (postId: string) => {
     navigator.clipboard.writeText(`https://nextignition.com/post/${postId}`);
     setOpenPostMenu(null);
     // You could add a toast notification here
   };
 
-  const handleHidePost = (postId: number) => {
+  const handleHidePost = (postId: string) => {
     setPosts(posts.filter(p => p.id !== postId));
     setOpenPostMenu(null);
   };
@@ -483,7 +535,7 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
                     onClick={(e) => e.stopPropagation()}
                   >
                     {/* Show Edit & Delete for user's own posts (post id 1 for demo) */}
-                    {post.id === 1 && (
+                    {post.id === 'mock-1' && (
                       <>
                         <button
                           onClick={() => {
@@ -528,7 +580,7 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
                     </button>
 
                     {/* Show hide/report for other people's posts */}
-                    {post.id !== 1 && (
+                    {post.id !== 'mock-1' && (
                       <>
                         <div className="border-t border-gray-200" />
                         <button
@@ -640,7 +692,9 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
           {post.type === 'video' && post.video && (
             <div className="relative mb-4 rounded-lg overflow-hidden bg-black">
               <video
-                ref={el => videoRefs.current[post.id] = el}
+                ref={(el) => {
+                  videoRefs.current[post.id] = el;
+                }}
                 className="w-full"
                 poster={post.video.thumbnail}
                 muted
@@ -756,11 +810,17 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
               <Heart className={`w-5 h-5 ${post.isLiked ? 'fill-current' : ''}`} />
               <span className="font-medium">Like</span>
             </motion.button>
-            <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600">
+            <button
+              onClick={() => setExpandedPost(expandedPost === post.id ? null : post.id)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
+            >
               <MessageCircle className="w-5 h-5" />
               <span className="font-medium">Comment</span>
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600">
+            <button
+              onClick={() => void handleSharePost(post)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
+            >
               <Share2 className="w-5 h-5" />
               <span className="font-medium">Share</span>
             </button>
@@ -779,11 +839,10 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
           <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-pink-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                YU
+                {currentUserInitials}
               </div>
               <div className="flex-1 relative">
-                <input
-                  type="text"
+                <textarea
                   value={commentText[post.id] || ''}
                   onChange={(e) => setCommentText({ ...commentText, [post.id]: e.target.value })}
                   placeholder="Write a comment..."
@@ -793,7 +852,12 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
                   <button className="p-1.5 hover:bg-gray-200 rounded-full transition-colors">
                     <Smile className="w-5 h-5 text-gray-500" />
                   </button>
-                  <button className="p-1.5 hover:bg-gray-200 rounded-full transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => handleAddComment(post.id)}
+                    disabled={!commentText[post.id]?.trim()}
+                    className="p-1.5 hover:bg-gray-200 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     <Send className="w-5 h-5 text-blue-500" />
                   </button>
                 </div>
@@ -845,6 +909,20 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
 
       {/* Stories Section - Horizontal Scroll */}
       <div className="bg-white border-b border-gray-200 px-4 lg:px-6 py-4 mb-0 lg:mb-6">
+        {feedError && (
+          <div className="max-w-7xl mx-auto px-4 md:px-6 pb-3">
+            <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">
+              {feedError}
+            </div>
+          </div>
+        )}
+        {feedLoading && (
+          <div className="max-w-7xl mx-auto px-4 md:px-6 pb-3">
+            <div className="p-3 rounded-lg bg-gray-100 border border-gray-200 text-gray-700 text-sm">
+              Loading feed...
+            </div>
+          </div>
+        )}
         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
           {stories.map((story, index) => (
             <motion.div
@@ -968,7 +1046,7 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
 
             {/* Create Post Button - Separate and Prominent */}
             <button
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => { setShowCreateModal(true); setCreatePostError(''); }}
               className="w-full sm:w-auto px-5 py-2.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
               style={{
                 background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})`,
@@ -994,53 +1072,55 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
 
         {/* Right Sidebar */}
         <aside className="hidden lg:block lg:col-span-4 space-y-6">
-          {/* Trending Hashtags */}
-          <div className="bg-white rounded-xl p-4 shadow-sm">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-orange-500" />
-              Trending Topics
-            </h3>
-            <div className="space-y-3">
-              {trendingTopics.map((topic, idx) => (
-                <motion.div
-                  key={idx}
-                  whileHover={{ x: 4 }}
-                  className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
-                >
-                  <div>
-                    <div className="font-bold text-blue-600">{topic.tag}</div>
-                    <div className="text-sm text-gray-600">{topic.posts.toLocaleString()} posts</div>
-                  </div>
-                  <div className="text-sm font-bold text-green-600">{topic.trend}</div>
-                </motion.div>
-              ))}
+          {trendingTopics.length > 0 && (
+            <div className="bg-white rounded-xl p-4 shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-orange-500" />
+                Trending Topics
+              </h3>
+              <div className="space-y-3">
+                {trendingTopics.map((topic, idx) => (
+                  <motion.div
+                    key={idx}
+                    whileHover={{ x: 4 }}
+                    className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                  >
+                    <div>
+                      <div className="font-bold text-blue-600">{topic.tag}</div>
+                      <div className="text-sm text-gray-600">{topic.posts.toLocaleString()} posts</div>
+                    </div>
+                    <div className="text-sm font-bold text-green-600">{topic.trend}</div>
+                  </motion.div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Suggested Connections */}
-          <div className="bg-white rounded-xl p-4 shadow-sm">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-blue-500" />
-              Suggested Connections
-            </h3>
-            <div className="space-y-4">
-              {suggestedConnections.map((person, idx) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                    {person.avatar}
+          {suggestedConnections.length > 0 && (
+            <div className="bg-white rounded-xl p-4 shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-blue-500" />
+                Suggested Connections
+              </h3>
+              <div className="space-y-4">
+                {suggestedConnections.map((person, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                      {person.avatar}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-sm text-gray-900 truncate">{person.name}</h4>
+                      <p className="text-xs text-gray-600 truncate">{person.title}</p>
+                      <p className="text-xs text-gray-500">{person.mutual}</p>
+                    </div>
+                    <button className="px-3 py-1.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors flex-shrink-0">
+                      Connect
+                    </button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-sm text-gray-900 truncate">{person.name}</h4>
-                    <p className="text-xs text-gray-600 truncate">{person.title}</p>
-                    <p className="text-xs text-gray-500">{person.mutual}</p>
-                  </div>
-                  <button className="px-3 py-1.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors flex-shrink-0">
-                    Connect
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </aside>
       </div>
 
@@ -1052,20 +1132,22 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowCreateModal(false)}
+            onClick={() => { setShowCreateModal(false); setCreatePostError(''); onCreateModalClose?.(); }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', duration: 0.3 }}
+              className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             >
               {/* Modal Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900">Create Post</h2>
                 <button
-                  onClick={() => setShowCreateModal(false)}
+                  type="button"
+                  onClick={() => { setShowCreateModal(false); setCreatePostError(''); onCreateModalClose?.(); }}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5 text-gray-600" />
@@ -1074,6 +1156,11 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
 
               {/* Modal Content */}
               <div className="p-6">
+                {createPostError && (
+                  <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                    {createPostError}
+                  </div>
+                )}
                 {/* Post Type Selector */}
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
                   {postTypes.map((type) => (
@@ -1102,10 +1189,10 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
                 {/* User Info */}
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
-                    YU
+                    {currentUserInitials}
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Your Name</h3>
+                    <h3 className="font-bold text-gray-900">{currentUserName}</h3>
                     <p className="text-sm text-gray-600">Post publicly</p>
                   </div>
                 </div>
@@ -1114,6 +1201,8 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
                 <textarea
                   placeholder="What's on your mind?"
                   rows={6}
+                  value={postContent}
+                  onChange={(e) => { setPostContent(e.target.value); setCreatePostError(''); }}
                   className="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-4"
                 />
 
@@ -1219,12 +1308,15 @@ export function EnhancedHomeFeed({ userType = 'foundor' }: EnhancedHomeFeedProps
                       <span className="text-sm font-medium whitespace-nowrap">Enhance with AI</span>
                     </button>
                     <button
-                      className="flex-1 sm:flex-none px-6 py-2 bg-gradient-to-r text-white rounded-lg font-bold hover:opacity-90 transition-opacity whitespace-nowrap"
+                      type="button"
+                      onClick={handleCreatePost}
+                      disabled={postSubmitting || !postContent.trim()}
+                      className="flex-1 sm:flex-none px-6 py-2 bg-gradient-to-r text-white rounded-lg font-bold hover:opacity-90 transition-opacity whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{
                         background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})`,
                       }}
                     >
-                      Post
+                      {postSubmitting ? 'Posting...' : 'Post'}
                     </button>
                   </div>
                 </div>

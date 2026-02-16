@@ -4,16 +4,20 @@ import { brandColors } from '../utils/colors';
 
 interface VerificationBannerProps {
   userRole: 'founder' | 'expert' | 'investor';
-  userName: string;
-  onComplete: () => void;
-  onDismiss: () => void;
+  userName?: string;
+  onComplete?: () => void;
+  onDismiss?: () => void;
+  onClose?: () => void;
 }
 
-export function VerificationBanner({ userRole, userName, onComplete, onDismiss }: VerificationBannerProps) {
+export function VerificationBanner({ userRole, userName = 'there', onComplete, onDismiss, onClose }: VerificationBannerProps) {
+  const dismiss = onDismiss || onClose;
+
   const handleComplete = () => {
     // Store the user role in sessionStorage before redirecting
     sessionStorage.setItem('profileCompletionRole', userRole);
     sessionStorage.setItem('selectedRoles', JSON.stringify([userRole]));
+    onComplete?.();
     // Redirect to profile completion page
     window.location.hash = '#complete-profile';
   };
@@ -48,7 +52,7 @@ export function VerificationBanner({ userRole, userName, onComplete, onDismiss }
               <ArrowRight className="w-4 h-4" />
             </button>
             <button
-              onClick={onDismiss}
+              onClick={dismiss}
               className="px-4 py-2 rounded-lg font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition-colors"
             >
               Remind Me Later
@@ -71,7 +75,7 @@ export function VerificationBanner({ userRole, userName, onComplete, onDismiss }
         </div>
 
         <button
-          onClick={onDismiss}
+          onClick={dismiss}
           className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
         >
           <X className="w-5 h-5" />

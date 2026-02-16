@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import Message from '../models/Message';
 import Conversation from '../models/Conversation';
+import mongoose from 'mongoose';
 
 // Send a message
 export const sendMessage = async (req: AuthRequest, res: Response) => {
@@ -25,7 +26,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
 
         // Create the message
         const message = await Message.create({
-            conversationId: conversation._id,
+            conversationId: conversation._id as mongoose.Types.ObjectId,
             sender: senderId,
             receiver: receiverId,
             content,
@@ -46,7 +47,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
 
         // TODO: Emit socket event for real-time update
 
-        const populatedMessage = await message.populate('sender', 'name avatar');
+        const populatedMessage = await Message.findById(message._id).populate('sender', 'name avatar');
         res.status(201).json(populatedMessage);
     } catch (error) {
         console.error(error);
@@ -75,7 +76,8 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
 export const getMessages = async (req: AuthRequest, res: Response) => {
     try {
         const { conversationId } = req.params;
-        const messages = await Message.find({ conversationId })
+        const convObjectId = new mongoose.Types.ObjectId(conversationId as string);
+        const messages = await Message.find({ conversationId: convObjectId })
             .populate('sender', 'name avatar')
             .sort({ createdAt: 1 });
 
@@ -99,8 +101,9 @@ export const markAsRead = async (req: AuthRequest, res: Response) => {
         });
 
         // Mark all messages in this conversation received by this user as read
+        const convObjectId = new mongoose.Types.ObjectId(conversationId as string);
         await Message.updateMany(
-            { conversationId, receiver: userId, isRead: false },
+            { conversationId: convObjectId, receiver: userId, isRead: false },
             { $set: { isRead: true } }
         );
 

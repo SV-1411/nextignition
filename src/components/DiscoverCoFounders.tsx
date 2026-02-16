@@ -22,11 +22,12 @@ import {
   ExternalLink,
   X
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { brandColors } from '../utils/colors';
+import api from '../services/api';
 
 interface CoFounder {
-  id: number;
+  id: string;
   name: string;
   avatar: string;
   currentRole: string;
@@ -45,6 +46,24 @@ interface CoFounder {
   interests: string[];
   linkedinUrl?: string;
   startupStatus: 'has-startup' | 'wants-to-join' | 'ideal';
+}
+
+interface ApiCofounderProfile {
+  _id: string;
+  user: { _id: string; name: string; avatar?: string; role?: string; profile?: any };
+  currentRole?: string;
+  lookingFor?: string;
+  commitment?: 'Full-time' | 'Part-time' | 'Flexible';
+  equityExpectation?: string;
+  yearsExperience?: number;
+  previousStartups?: number;
+  availability?: string;
+  vision?: string;
+  strengths?: string[];
+  interests?: string[];
+  skills?: string[];
+  location?: string;
+  startupStatus?: 'has-startup' | 'wants-to-join' | 'ideal';
 }
 
 export function DiscoverCoFounders() {
@@ -84,134 +103,80 @@ export function DiscoverCoFounders() {
     { value: 'recent', label: 'Recently Active' },
   ];
 
-  const mockCoFounders: CoFounder[] = [
-    {
-      id: 1,
-      name: 'Alex Thompson',
-      avatar: 'AT',
-      currentRole: 'Senior Full-Stack Engineer at Meta',
-      lookingFor: 'Business-minded co-founder for B2B SaaS',
-      skills: ['Full-Stack Development', 'System Architecture', 'AI/ML'],
-      location: 'San Francisco, CA',
-      commitment: 'Full-time',
-      equityExpectation: '40-50%',
-      yearsExperience: 8,
-      previousStartups: 1,
-      availability: 'Available in 2 months',
-      matchScore: 94,
+  const [coFounders, setCoFounders] = useState<CoFounder[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+
+  const mapApi = (p: ApiCofounderProfile): CoFounder => {
+    const name = p.user?.name || 'User';
+    const initials = name
+      .split(' ')
+      .filter(Boolean)
+      .map((x) => x[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+    return {
+      id: p.user._id,
+      name,
+      avatar: initials,
+      currentRole: p.currentRole || p.user?.role || 'Member',
+      lookingFor: p.lookingFor || '',
+      skills: p.skills || [],
+      location: p.location || '',
+      commitment: (p.commitment || 'Flexible') as any,
+      equityExpectation: p.equityExpectation || '',
+      yearsExperience: p.yearsExperience || 0,
+      previousStartups: p.previousStartups || 0,
+      availability: p.availability || '',
+      matchScore: 0,
       verified: true,
-      vision: 'Build enterprise-grade infrastructure that scales globally',
-      strengths: ['Technical Leadership', 'Product Development', 'Team Building'],
-      interests: ['Enterprise SaaS', 'DevOps', 'AI/ML'],
-      linkedinUrl: 'https://www.linkedin.com/in/alexthompson',
-      startupStatus: 'has-startup'
-    },
-    {
-      id: 2,
-      name: 'Maria Garcia',
-      avatar: 'MG',
-      currentRole: 'Product Manager at Stripe',
-      lookingFor: 'Technical co-founder with FinTech experience',
-      skills: ['Product Strategy', 'User Research', 'Growth'],
-      location: 'New York, NY',
-      commitment: 'Full-time',
-      equityExpectation: '35-45%',
-      yearsExperience: 6,
-      previousStartups: 2,
-      availability: 'Immediately',
-      matchScore: 91,
-      verified: true,
-      vision: 'Democratize access to financial services for underserved markets',
-      strengths: ['Product-Market Fit', 'Go-to-Market', 'Fundraising'],
-      interests: ['FinTech', 'Consumer Apps', 'Emerging Markets'],
-      linkedinUrl: 'https://www.linkedin.com/in/mariagarcia',
-      startupStatus: 'wants-to-join'
-    },
-    {
-      id: 3,
-      name: 'James Park',
-      avatar: 'JP',
-      currentRole: 'Design Lead at Airbnb',
-      lookingFor: 'Technical + Business co-founders for consumer app',
-      skills: ['UI/UX Design', 'Brand Strategy', 'Product Design'],
-      location: 'Remote',
-      commitment: 'Flexible',
-      equityExpectation: '30-40%',
-      yearsExperience: 7,
-      previousStartups: 1,
-      availability: 'Available now',
-      matchScore: 88,
-      verified: true,
-      vision: 'Create delightful consumer experiences that people love',
-      strengths: ['Design Thinking', 'User Experience', 'Brand Building'],
-      interests: ['Consumer Apps', 'E-commerce', 'Social Platforms'],
-      linkedinUrl: 'https://www.linkedin.com/in/jamespark',
-      startupStatus: 'ideal'
-    },
-    {
-      id: 4,
-      name: 'Sarah Williams',
-      avatar: 'SW',
-      currentRole: 'VP of Marketing at HubSpot',
-      lookingFor: 'Technical co-founder for MarTech startup',
-      skills: ['Growth Marketing', 'Brand Building', 'Content Strategy'],
-      location: 'Boston, MA',
-      commitment: 'Full-time',
-      equityExpectation: '40-50%',
-      yearsExperience: 10,
-      previousStartups: 2,
-      availability: 'Available in 1 month',
-      matchScore: 92,
-      verified: true,
-      vision: 'Build the next generation of marketing automation tools',
-      strengths: ['Growth Hacking', 'Content Marketing', 'Community Building'],
-      interests: ['MarTech', 'Enterprise SaaS', 'AI/ML'],
-      linkedinUrl: 'https://www.linkedin.com/in/sarahwilliams',
-      startupStatus: 'has-startup'
-    },
-    {
-      id: 5,
-      name: 'David Chen',
-      avatar: 'DC',
-      currentRole: 'Data Scientist at OpenAI',
-      lookingFor: 'Product-focused co-founder for AI startup',
-      skills: ['Machine Learning', 'Data Science', 'AI Research'],
-      location: 'San Francisco, CA',
-      commitment: 'Full-time',
-      equityExpectation: '45-50%',
-      yearsExperience: 5,
-      previousStartups: 0,
-      availability: 'Available in 3 months',
-      matchScore: 86,
-      verified: true,
-      vision: 'Apply cutting-edge AI to solve real-world problems',
-      strengths: ['AI/ML', 'Research', 'Technical Innovation'],
-      interests: ['AI/ML', 'HealthTech', 'Climate Tech'],
-      linkedinUrl: 'https://www.linkedin.com/in/davidchen',
-      startupStatus: 'wants-to-join'
-    },
-    {
-      id: 6,
-      name: 'Emma Rodriguez',
-      avatar: 'ER',
-      currentRole: 'Sales Director at Salesforce',
-      lookingFor: 'Technical + Product co-founders for B2B SaaS',
-      skills: ['Enterprise Sales', 'Business Development', 'Revenue Operations'],
-      location: 'Austin, TX',
-      commitment: 'Full-time',
-      equityExpectation: '35-45%',
-      yearsExperience: 9,
-      previousStartups: 1,
-      availability: 'Immediately',
-      matchScore: 89,
-      verified: true,
-      vision: 'Build a sales-led growth engine for enterprise software',
-      strengths: ['Enterprise Sales', 'Deal Closing', 'Team Scaling'],
-      interests: ['Enterprise SaaS', 'Sales Tech', 'Revenue Operations'],
-      linkedinUrl: 'https://www.linkedin.com/in/emmarodriguez',
-      startupStatus: 'ideal'
-    },
-  ];
+      vision: p.vision || '',
+      strengths: p.strengths || [],
+      interests: p.interests || [],
+      linkedinUrl: p.user?.profile?.socials?.linkedin,
+      startupStatus: (p.startupStatus || 'ideal') as any,
+    };
+  };
+
+  const fetchSaved = async () => {
+    try {
+      const resp = await api.get('/cofounders/saved');
+      const ids = new Set<string>((resp.data as string[]) || []);
+      setSavedIds(ids);
+    } catch {
+      setSavedIds(new Set());
+    }
+  };
+
+  const fetchCofounders = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params: any = {};
+      if (startupStatus) params.startupStatus = startupStatus;
+      const resp = await api.get('/cofounders', { params });
+      const mapped = (resp.data as ApiCofounderProfile[]).map(mapApi);
+      setCoFounders(mapped);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to load co-founders');
+      setCoFounders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCofounders();
+    fetchSaved();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    fetchCofounders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startupStatus]);
 
   const toggleFilter = (category: keyof typeof filters, value: string) => {
     const current = filters[category];
@@ -238,13 +203,40 @@ export function DiscoverCoFounders() {
     filters.equityFlexibility.length +
     filters.experience.length;
 
-  // Filter co-founders based on startup status
-  const filteredCoFounders = mockCoFounders.filter(cf => 
-    startupStatus === 'all' || cf.startupStatus === startupStatus
-  );
+  const filteredCoFounders = coFounders;
+
+  const toggleSave = async (userId: string) => {
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+    try {
+      const resp = await api.post(`/cofounders/saved/${userId}`);
+      setSavedIds((prev) => {
+        const next = new Set(prev);
+        if (resp.data?.saved) next.add(userId);
+        else next.delete(userId);
+        return next;
+      });
+    } catch {
+      // best-effort
+    }
+  };
 
   return (
     <div className="flex-1 bg-gray-50 overflow-y-auto relative">
+      {error && (
+        <div className="p-4">
+          <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">{error}</div>
+        </div>
+      )}
+      {loading && (
+        <div className="p-4">
+          <div className="p-3 rounded-lg bg-gray-100 border border-gray-200 text-gray-700 text-sm">Loading co-founders...</div>
+        </div>
+      )}
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">
@@ -488,7 +480,9 @@ export function DiscoverCoFounders() {
                           </button>
                           <button className="px-6 py-3 border-2 border-pink-500 text-pink-600 rounded-lg font-bold hover:bg-pink-50 transition-colors flex items-center justify-center gap-2">
                             <Heart className="w-5 h-5" />
-                            Save
+                            <span onClick={(e) => { e.stopPropagation(); void toggleSave(cofounder.id); }}>
+                              {savedIds.has(cofounder.id) ? 'Saved' : 'Save'}
+                            </span>
                           </button>
                           {cofounder.linkedinUrl && (
                             <button

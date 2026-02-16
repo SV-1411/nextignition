@@ -1,4 +1,3 @@
-import { StartupProfilePage } from './StartupProfilePage';
 import { ProfilePage } from './ProfilePage';
 import { SettingsPage } from './SettingsPage';
 import { DiscoverExperts } from './DiscoverExperts';
@@ -15,29 +14,25 @@ import { RoleSwitcher, UserRole } from './RoleSwitcher';
 import { NotificationsDropdown } from './NotificationsDropdown';
 import { MyStartupPage } from './MyStartupPage';
 import { EnhancedHomeFeed } from './EnhancedHomeFeed';
-import { VerificationBanner } from './VerificationBanner';
 import { IgnishaAIDashboard } from './IgnishaAIDashboard';
+import { VerificationBanner } from './VerificationBanner';
 import { brandColors } from '../utils/colors';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
+import api from '../services/api';
+import { fetchMe, getCurrentUser, setCurrentUser as persistCurrentUser } from '../services/authService';
 import {
   Home,
   Rocket,
-  TrendingUp,
   Users,
   MessageCircle,
   Calendar,
   Settings,
   Bell,
-  Search,
   Menu,
   X,
   Plus,
   DollarSign,
-  Target,
-  Award,
-  Briefcase,
-  BarChart3,
   ChevronRight,
   ChevronLeft,
   User,
@@ -46,7 +41,14 @@ import {
   Newspaper,
   FileText,
   UserPlus,
-  Sparkles
+  Sparkles,
+  Target,
+  Award,
+  Briefcase,
+  BarChart3,
+  TrendingUp,
+  Search,
+  Edit
 } from 'lucide-react';
 import logoImage from 'figma:asset/faed1dd832314fe381fd34c35312b9faa571832d.png';
 import squareLogo from 'figma:asset/c1daa721302db62b744322e73e636f7b8f029976.png';
@@ -62,28 +64,7 @@ interface QuickAction {
   title: string;
   description: string;
   color: string;
-}
-
-interface Post {
-  id: number;
-  author: {
-    name: string;
-    role: string;
-    avatar: string;
-  };
-  time: string;
-  content: string;
-  image?: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  isLiked: boolean;
-}
-
-interface Event {
-  title: string;
-  date: string;
-  attendees: number;
+  action: () => void;
 }
 
 export function FounderDashboard() {
@@ -91,139 +72,153 @@ export function FounderDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [discoverSubTab, setDiscoverSubTab] = useState('Experts');
+  const [openHomeFeedCreatePost, setOpenHomeFeedCreatePost] = useState(false);
   const [currentRole, setCurrentRole] = useState<UserRole>('founder');
-  const [isAIOpen, setIsAIOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [showVerificationBanner, setShowVerificationBanner] = useState(true);
-  const [isVerified, setIsVerified] = useState(false); // Always show banner by default
+  const [isVerified, setIsVerified] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [upcomingEvents, setUpcomingEvents] = useState(0);
+  const [dashboardStats, setDashboardStats] = useState({
+    profileViews: 0,
+    connections: 0,
+    investorInterest: 0,
+    fundingProgress: 0
+  });
+
+  useEffect(() => {
+    const user = getCurrentUser();
+    setCurrentUser(user);
+    setIsVerified(!!user?.isVerified);
+
+    // Fetch dashboard data
+    fetchDashboardData();
+
+    // Refresh user state from backend to determine verification + banner visibility
+    (async () => {
+      try {
+        const me = await fetchMe();
+        if (me) {
+          persistCurrentUser(me);
+          setCurrentUser(me);
+          setIsVerified(!!me.isVerified);
+
+          const dismissedUntil = me.verificationBannerDismissedUntil ? new Date(me.verificationBannerDismissedUntil) : null;
+          const now = new Date();
+          const hideBanner = dismissedUntil ? dismissedUntil.getTime() > now.getTime() : false;
+          setShowVerificationBanner(!hideBanner);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  const dismissVerificationBanner = async (hours: number) => {
+    try {
+      const dismissedUntil = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+      await api.post('/verification/banner', { dismissedUntil });
+      setShowVerificationBanner(false);
+      const me = await fetchMe();
+      if (me) {
+        persistCurrentUser(me);
+        setCurrentUser(me);
+      }
+    } catch {
+      setShowVerificationBanner(false);
+    }
+  };
+
+  const completeVerification = async () => {
+    try {
+      await api.post('/verification/complete');
+      setIsVerified(true);
+      const me = await fetchMe();
+      if (me) {
+        persistCurrentUser(me);
+        setCurrentUser(me);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const fetchDashboardData = async () => {
+    try {
+      // Fetch unread messages count
+      const messagesRes = await api.get('/messages/conversations');
+      const unreadCount = messagesRes.data?.reduce((acc: number, conv: any) => acc + (conv.unreadCount || 0), 0);
+      setUnreadMessages(unreadCount || 0);
+
+      // Fetch unread notifications
+      const notifRes = await api.get('/notifications');
+      const notifCount = notifRes.data?.filter((n: any) => !n.read).length || 0;
+      setUnreadNotifications(notifCount);
+
+      // Fetch upcoming events count
+      const eventsRes = await api.get('/events', { params: { status: 'upcoming' } });
+      setUpcomingEvents(eventsRes.data?.length || 0);
+    } catch {
+      // Silent fail - keep showing 0
+    }
+  };
 
   const handleRoleChange = (newRole: UserRole) => {
     setCurrentRole(newRole);
     console.log(`Switching to ${newRole} dashboard`);
   };
 
-  // Otherwise render founder dashboard
-  const sidebarItems: SidebarItem[] = [
-    { icon: Home, label: 'Home Feed' },
-    { icon: Rocket, label: 'My Startup' },
-    { icon: Compass, label: 'Discover' },
-    { icon: MessageCircle, label: 'Messages', badge: 5 },
-    { icon: DollarSign, label: 'Funding Portal' },
-    { icon: Users, label: 'Communities' },
-    { icon: Calendar, label: 'Events', badge: 2 },
-    { icon: Mic, label: 'Podcasts' },
-    { icon: Newspaper, label: 'News' },
-    { icon: Sparkles, label: 'Ignisha AI' },
-    { icon: User, label: 'Profile' },
-    { icon: Settings, label: 'Settings' },
-  ];
-
   const quickActions: QuickAction[] = [
     {
-      icon: Plus,
+      icon: Edit,
       title: 'Post Update',
       description: 'Share your progress',
       color: brandColors.electricBlue,
+      action: () => {
+        setActiveTab('Home Feed');
+        setOpenHomeFeedCreatePost(true);
+      },
     },
     {
       icon: FileText,
       title: 'Upload Pitch Deck',
       description: 'Add to your profile',
       color: brandColors.atomicOrange,
+      action: () => setActiveTab('My Startup'),
     },
     {
       icon: UserPlus,
       title: 'Find Co-founder',
       description: 'Browse matches',
       color: brandColors.navyBlue,
+      action: () => {
+        setActiveTab('Discover');
+        setDiscoverSubTab('CoFounders');
+      },
     },
     {
       icon: DollarSign,
       title: 'Apply for Funding',
       description: 'Get investor ready',
       color: brandColors.electricBlue,
+      action: () => setActiveTab('Funding Portal'),
     },
   ];
-
-  const milestones = [
-    { title: 'Business Plan', completed: true },
-    { title: 'Pitch Deck', completed: true, progress: 70 },
-    { title: 'MVP Development', completed: false },
-    { title: 'Beta Testing', completed: false },
-    { title: 'Launch', completed: false },
-  ];
-
-  const posts: Post[] = [
-    {
-      id: 1,
-      author: {
-        name: 'Sarah Chen',
-        role: 'Founder at TechFlow AI',
-        avatar: 'SC',
-      },
-      time: '2h ago',
-      content: 'Just closed our seed round! 🎉 Grateful for all the mentorship from the NextIgnition community. Here\'s what I learned about pitching to VCs...',
-      likes: 124,
-      comments: 18,
-      shares: 7,
-      isLiked: false,
-    },
-    {
-      id: 2,
-      author: {
-        name: 'Marcus Williams',
-        role: 'Co-founder at GreenScale',
-        avatar: 'MW',
-      },
-      time: '5h ago',
-      content: 'Looking for a technical co-founder with experience in blockchain and sustainability. Our vision is to revolutionize carbon credit trading. DM if interested!',
-      likes: 89,
-      comments: 32,
-      shares: 12,
-      isLiked: true,
-    },
-    {
-      id: 3,
-      author: {
-        name: 'Emily Rodriguez',
-        role: 'Growth Lead at StartupHub',
-        avatar: 'ER',
-      },
-      time: '1d ago',
-      content: 'Free event tomorrow: "From 0 to 10K users in 90 days" 🚀 I\'ll be sharing our exact playbook. Limited spots available!',
-      image: 'event',
-      likes: 256,
-      comments: 45,
-      shares: 89,
-      isLiked: false,
-    },
-  ];
-
-  const suggestedConnections = [
-    { name: 'David Park', role: 'Angel Investor', mutual: 12, avatar: 'DP' },
-    { name: 'Lisa Zhang', role: 'UX Designer', mutual: 8, avatar: 'LZ' },
-    { name: 'James Miller', role: 'Marketing Expert', mutual: 15, avatar: 'JM' },
-  ];
-
-  const upcomingEvents: Event[] = [
-    { title: 'Pitch Competition Finals', date: 'Jan 25', attendees: 234 },
-    { title: 'Networking Mixer', date: 'Jan 28', attendees: 156 },
-    { title: 'AI Tools Workshop', date: 'Feb 2', attendees: 89 },
-  ];
-
-  const trendingTopics = [
-    { tag: '#AIStartups', posts: 1234 },
-    { tag: '#SeedFunding', posts: 892 },
-    { tag: '#ProductLaunch', posts: 567 },
-    { tag: '#StartupTips', posts: 2341 },
-  ];
-
-  const stories = [
-    { author: 'You', image: '+', isAdd: true },
-    { author: 'Sarah', image: 'SC', color: brandColors.atomicOrange },
-    { author: 'Marcus', image: 'MW', color: brandColors.electricBlue },
-    { author: 'Emily', image: 'ER', color: brandColors.navyBlue },
-    { author: 'David', image: 'DP', color: brandColors.atomicOrange },
+  const sidebarItems: SidebarItem[] = [
+    { icon: Home, label: 'Home Feed' },
+    { icon: Rocket, label: 'My Startup' },
+    { icon: Compass, label: 'Discover' },
+    { icon: MessageCircle, label: 'Messages', badge: unreadMessages || undefined },
+    { icon: DollarSign, label: 'Funding Portal' },
+    { icon: Users, label: 'Communities' },
+    { icon: Calendar, label: 'Events', badge: upcomingEvents || undefined },
+    { icon: Mic, label: 'Podcasts' },
+    { icon: Newspaper, label: 'News' },
+    { icon: Sparkles, label: 'Ignisha AI' },
+    { icon: User, label: 'Profile' },
+    { icon: Settings, label: 'Settings' },
   ];
 
   // If user switches to a different role, render that dashboard
@@ -431,10 +426,12 @@ export function FounderDashboard() {
                 className="relative p-2 hover:bg-gray-100 rounded-full"
               >
                 <Bell className="w-6 h-6" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                {unreadNotifications > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                )}
               </button>
               <button className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-blue-600 flex items-center justify-center text-white font-bold">
-                JD
+                {currentUser?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'JD'}
               </button>
             </div>
           </div>
@@ -447,10 +444,97 @@ export function FounderDashboard() {
           userRole="founder"
         />
 
+        {/* Verification Banner */}
+        {showVerificationBanner && !isVerified && (
+          <VerificationBanner 
+            userRole={currentRole === 'founder' ? 'founder' : 'founder'}
+            userName={currentUser?.name}
+            onComplete={completeVerification}
+            onDismiss={() => dismissVerificationBanner(24)}
+            onClose={() => dismissVerificationBanner(24)}
+          />
+        )}
+
         <div className="flex-1 overflow-y-auto lg:overflow-y-auto">
           {/* Home Feed Tab */}
           {activeTab === 'Home Feed' && (
-            <EnhancedHomeFeed userType="founder" />
+            <div className="space-y-6">
+              {/* Dashboard Stats Widget */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mx-[24px] mt-[16px]">
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <BarChart3 className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">{dashboardStats.profileViews}</p>
+                      <p className="text-xs text-gray-500">Profile Views</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">{dashboardStats.connections}</p>
+                      <p className="text-xs text-gray-500">Connections</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">{dashboardStats.investorInterest}</p>
+                      <p className="text-xs text-gray-500">Investor Interest</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                      <DollarSign className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">{dashboardStats.fundingProgress}%</p>
+                      <p className="text-xs text-gray-500">Funding Progress</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="bg-white rounded-xl p-6 shadow-sm mx-[24px] mt-[16px]">
+                <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {quickActions.map((action, index) => (
+                    <button
+                      key={index}
+                      onClick={action.action}
+                      className="flex flex-col items-start p-4 rounded-xl border-2 border-gray-100 hover:border-gray-200 hover:shadow-md transition-all text-left"
+                    >
+                      <div
+                        className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
+                        style={{ backgroundColor: `${action.color}20` }}
+                      >
+                        <action.icon className="w-5 h-5" style={{ color: action.color }} />
+                      </div>
+                      <h3 className="font-bold text-gray-900 text-sm mb-1">{action.title}</h3>
+                      <p className="text-xs text-gray-500">{action.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <EnhancedHomeFeed
+                userType="founder"
+                openCreateModal={openHomeFeedCreatePost}
+                onCreateModalClose={() => setOpenHomeFeedCreatePost(false)}
+              />
+            </div>
           )}
 
           {/* My Startup Tab - Shows Startup Profile */}
@@ -501,12 +585,12 @@ export function FounderDashboard() {
 
           {/* Messages Tab */}
           {activeTab === 'Messages' && (
-            <MessagingPage userRole="founder" userId={1} />
+            <MessagingPage userRole="founder" />
           )}
 
           {/* Communities Tab */}
           {activeTab === 'Communities' && (
-            <CommunitiesPage userRole="founder" userId={1} />
+            <CommunitiesPage userRole="founder" userId={userId} />
           )}
 
           {/* Funding Portal Tab */}
@@ -516,7 +600,7 @@ export function FounderDashboard() {
 
           {/* Events Tab */}
           {activeTab === 'Events' && (
-            <EventsPage userRole="founder" userId={1} />
+            <EventsPage userRole="founder" />
           )}
 
           {/* Podcasts Tab */}
@@ -526,7 +610,7 @@ export function FounderDashboard() {
 
           {/* News Tab */}
           {activeTab === 'News' && (
-            <NewsFeedPage userRole="founder" userId={1} />
+            <NewsFeedPage />
           )}
 
           {/* Ignisha AI Tab */}
@@ -622,9 +706,9 @@ export function FounderDashboard() {
             >
               <MessageCircle className="w-6 h-6" />
               <span className="text-xs font-medium">Messages</span>
-              {5 > 0 && (
+              {unreadMessages > 0 && (
                 <span className="absolute top-1 right-2 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
-                  5
+                  {unreadMessages > 9 ? '9+' : unreadMessages}
                 </span>
               )}
             </button>

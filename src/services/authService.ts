@@ -27,3 +27,12 @@ export const getCurrentUser = () => {
     const user = localStorage.getItem('user');
     return user ? JSON.parse(user) : null;
 };
+
+export const setCurrentUser = (user: any) => {
+    localStorage.setItem('user', JSON.stringify(user));
+};
+
+export const fetchMe = async () => {
+    const response = await api.get('/auth/me');
+    return response.data;
+};

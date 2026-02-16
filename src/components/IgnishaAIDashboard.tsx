@@ -74,7 +74,7 @@ interface Conversation {
   pinned: boolean;
 }
 
-import { generateSummary } from '../services/aiService';
+import { generateSummary, aiChat } from '../services/aiService';
 
 export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -92,6 +92,8 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
   const [aiPersonality, setAiPersonality] = useState('professional');
   const [showInsights, setShowInsights] = useState(true);
   const [showMobileActions, setShowMobileActions] = useState(false);
+  const [savedConversations, setSavedConversations] = useState<number[]>([]);
+  const [showShareToast, setShowShareToast] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -254,14 +256,15 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
     // AI response
     setIsTyping(true);
     try {
-      let aiResponse = '';
-      if (messageText.toLowerCase().includes('summary') || messageText.toLowerCase().includes('pitch')) {
-        const data = await generateSummary(messageText);
-        aiResponse = data.summary;
-      } else {
-        // Generic AI response for now
-        aiResponse = `I'd be happy to help you with that! As your AI strategist, I've analyzed your request: "${messageText}". How would you like me to proceed with the detailed breakdown?`;
-      }
+      // Build conversation history from previous messages
+      const conversationHistory = messages.map(m => ({
+        role: m.type === 'user' ? 'user' : 'assistant',
+        content: m.content
+      }));
+
+      // Call backend AI with OpenRouter
+      const data = await aiChat(messageText, conversationHistory);
+      const aiResponse = data.response || data.summary || 'No response received';
 
       const aiMessage: Message = {
         id: messages.length + 2,
@@ -294,6 +297,45 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
       setShowUploadModal(false);
       handleSendMessage(`Analyze my pitch deck: ${uploadedFile.name}`);
       setUploadedFile(null);
+    }
+  };
+
+  const handleSaveSession = () => {
+    if (activeConversation) {
+      setSavedConversations(prev => 
+        prev.includes(activeConversation) ? prev : [...prev, activeConversation]
+      );
+    }
+  };
+
+  const handleExportChat = () => {
+    const chatText = messages.map(m => `${m.type === 'user' ? 'You' : 'Ignisha'} (${m.timestamp}): ${m.content}`).join('\n\n');
+    const blob = new Blob([chatText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ignisha-chat-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleShareChat = async () => {
+    const chatSummary = messages.slice(0, 3).map(m => m.content.substring(0, 50)).join(' | ');
+    const shareText = `Check out my conversation with Ignisha AI:\n${chatSummary}...\n\nvia NextIgnition`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Ignisha AI Chat', text: shareText });
+      } catch {
+        // User cancelled or failed
+      }
+    } else {
+      // Fallback to clipboard
+      await navigator.clipboard.writeText(shareText);
+      setShowShareToast(true);
+      setTimeout(() => setShowShareToast(false), 2000);
     }
   };
 
@@ -588,13 +630,25 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
                     </button>
                   </div>
                   <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
-                    <button className="hidden md:block p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Save Session">
-                      <Bookmark className="w-5 h-5 text-gray-600" />
+                    <button 
+                      onClick={handleSaveSession}
+                      className={`hidden md:block p-2 hover:bg-gray-100 rounded-lg transition-colors ${savedConversations.includes(activeConversation || 0) ? 'text-purple-600' : ''}`} 
+                      title="Save Session"
+                    >
+                      <Bookmark className={`w-5 h-5 ${savedConversations.includes(activeConversation || 0) ? 'fill-purple-600' : 'text-gray-600'}`} />
                     </button>
-                    <button className="hidden md:block p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Export Chat">
+                    <button 
+                      onClick={handleExportChat}
+                      className="hidden md:block p-2 hover:bg-gray-100 rounded-lg transition-colors" 
+                      title="Export Chat"
+                    >
                       <Download className="w-5 h-5 text-gray-600" />
                     </button>
-                    <button className="hidden md:block p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Share">
+                    <button 
+                      onClick={handleShareChat}
+                      className="hidden md:block p-2 hover:bg-gray-100 rounded-lg transition-colors" 
+                      title="Share"
+                    >
                       <Share2 className="w-5 h-5 text-gray-600" />
                     </button>
                     <button

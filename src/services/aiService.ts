@@ -5,6 +5,11 @@ export const generateSummary = async (idea: string) => {
     return response.data;
 };
 
+export const aiChat = async (message: string, conversationHistory?: { role: string; content: string }[]) => {
+    const response = await api.post('/ai/chat', { message, conversationHistory });
+    return response.data;
+};
+
 export const summarizeUserProfile = async () => {
     const response = await api.post('/ai/profile');
     return response.data;

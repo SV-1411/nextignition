@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -41,6 +42,8 @@ import {
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import api from '../services/api';
+import { getCurrentUser } from '../services/authService';
 
 // Types
 type UserRole = 'founder' | 'expert' | 'investor';
@@ -49,6 +52,7 @@ type EventStatus = 'upcoming' | 'past' | 'live' | 'draft' | 'completed';
 
 interface Event {
   id: number;
+  apiId?: string;
   title: string;
   type: EventType;
   host: {
@@ -75,94 +79,94 @@ interface EventsPageProps {
   userRole?: UserRole; // Optional prop to override role
 }
 
-// Mock Data
-const MOCK_EVENTS: Event[] = [
-  {
-    id: 1,
-    title: 'SaaS Fundraising Strategies: Seed to Series A',
-    type: 'webinar',
-    host: { name: 'Sarah Chen', role: 'Venture Partner', avatar: 'SC', verified: true, type: 'investor' },
-    date: 'Jan 28, 2026',
-    time: '6:00 PM IST',
-    duration: '90 mins',
-    attendees: 486,
-    price: 'free',
-    thumbnail: 'https://images.unsplash.com/photo-1561089489-f13d5e730d72?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
-    description: 'Learn proven strategies to raise your first round of funding from top VCs.',
-    status: 'upcoming',
-    bookmarked: false,
-    isRegistered: true,
-    isHost: false,
-  },
-  {
-    id: 2,
-    title: 'Building AI-First Products Workshop',
-    type: 'workshop',
-    host: { name: 'Michael Park', role: 'AI Architect', avatar: 'MP', verified: true, type: 'expert' },
-    date: 'Jan 30, 2026',
-    time: '2:00 PM IST',
-    duration: '3 hours',
-    attendees: 120,
-    price: 499,
-    thumbnail: 'https://images.unsplash.com/photo-1766766464419-ea9d60543aee?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
-    description: 'A hands-on workshop to integrate LLMs into your existing product stack.',
-    status: 'upcoming',
-    bookmarked: true,
-    isRegistered: false,
-    isHost: false,
-  },
-  {
-    id: 3,
-    title: 'Global FinTech Demo Day 2026',
-    type: 'demo-day',
-    host: { name: 'NextIgnition', role: 'Platform', avatar: 'NI', verified: true, type: 'platform' },
-    date: 'Feb 05, 2026',
-    time: '5:00 PM IST',
-    duration: '4 hours',
-    attendees: 1500,
-    price: 'free',
-    thumbnail: 'https://images.unsplash.com/photo-1765438863717-49fca900f861?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
-    description: 'Top 10 FinTech startups pitch to a panel of international investors.',
-    status: 'upcoming',
-    bookmarked: false,
-    isRegistered: true,
-    isHost: true, // For investor demo
-  },
-  {
-    id: 4,
-    title: 'Networking Night: Founders & Funders',
-    type: 'networking',
-    host: { name: 'David Wilson', role: 'Community Lead', avatar: 'DW', verified: false, type: 'expert' },
-    date: 'Feb 10, 2026',
-    time: '7:00 PM IST',
-    duration: '2 hours',
-    attendees: 300,
-    price: 'free',
-    thumbnail: 'https://images.unsplash.com/photo-1515187029135-18ee286d815b?auto=format&fit=crop&q=80&w=1080',
-    description: 'Casual networking event for local founders and angel investors.',
-    status: 'upcoming',
-    bookmarked: false,
-    isRegistered: false,
-    isHost: false,
-  },
-  {
-    id: 5,
-    title: 'Masterclass: Scaling Sales Teams',
-    type: 'masterclass',
-    host: { name: 'Elena Rodriguez', role: 'CRO', avatar: 'ER', verified: true, type: 'expert' },
-    date: 'Feb 15, 2026',
-    time: '4:00 PM IST',
-    duration: '60 mins',
-    attendees: 250,
-    price: 999,
-    thumbnail: 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&q=80&w=1080',
-    description: 'Advanced sales tactics for B2B SaaS companies scaling past $1M ARR.',
-    status: 'upcoming',
-    bookmarked: false,
-    isRegistered: false,
-    isHost: false,
-  },
-];
+interface ApiEvent {
+  _id: string;
+  title: string;
+  description: string;
+  type: EventType;
+  hostType: 'platform' | 'expert' | 'investor' | 'founder';
+  hostUser?: {
+    _id: string;
+    name: string;
+    role: string;
+    avatar?: string;
+    isVerified?: boolean;
+  };
+  status: 'draft' | 'upcoming' | 'live' | 'completed' | 'cancelled';
+  startAt: string;
+  durationMinutes: number;
+  format: 'virtual' | 'in-person';
+  location?: string;
+  meetingLink?: string;
+  priceType: 'free' | 'paid';
+  priceAmount?: number;
+  currency?: string;
+  maxAttendees?: number;
+  registeredUsers?: string[];
+  bookmarkedBy?: string[];
+  thumbnailUrl?: string;
+  recordingUrl?: string;
+}
+
+const mapApiEventToUi = (
+  e: ApiEvent,
+  currentUserId: string | null,
+  currentUserRole: UserRole
+): Event => {
+  const start = new Date(e.startAt);
+  const date = start.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+  const time = start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+  const status: EventStatus = e.status === 'completed'
+    ? 'completed'
+    : e.status === 'draft'
+      ? 'draft'
+      : e.status === 'live'
+        ? 'live'
+        : e.status === 'cancelled'
+          ? 'past'
+          : 'upcoming';
+
+  const registeredUsers = e.registeredUsers || [];
+  const bookmarkedBy = e.bookmarkedBy || [];
+  const isRegistered = currentUserId ? registeredUsers.includes(currentUserId) : false;
+  const bookmarked = currentUserId ? bookmarkedBy.includes(currentUserId) : false;
+
+  const isHost = e.hostType === 'platform'
+    ? currentUserRole === 'investor' // keep legacy UI behavior minimal
+    : currentUserId ? e.hostUser?._id === currentUserId : false;
+
+  const hostName = e.hostType === 'platform' ? 'NextIgnition' : (e.hostUser?.name || 'Host');
+  const hostRole = e.hostType === 'platform' ? 'Platform' : (e.hostUser?.role || '');
+  const hostAvatar = e.hostType === 'platform' ? 'NI' : (e.hostUser?.avatar || hostName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase());
+
+  const price: number | 'free' = e.priceType === 'free' ? 'free' : Number(e.priceAmount || 0);
+
+  return {
+    id: Number.parseInt(e._id.slice(-6), 16) || 1,
+    apiId: e._id,
+    title: e.title,
+    type: e.type,
+    host: {
+      name: hostName,
+      role: hostRole,
+      avatar: hostAvatar,
+      verified: Boolean(e.hostUser?.isVerified) || e.hostType === 'platform',
+      type: e.hostType === 'platform' ? 'platform' : e.hostType === 'expert' ? 'expert' : 'investor',
+    },
+    date,
+    time,
+    duration: `${e.durationMinutes || 60} mins`,
+    attendees: registeredUsers.length,
+    price,
+    thumbnail: e.thumbnailUrl || 'https://images.unsplash.com/photo-1561089489-f13d5e730d72?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
+    description: e.description,
+    status,
+    bookmarked,
+    isRegistered,
+    isHost,
+  };
+};
 
 export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPageProps) {
   // State
@@ -179,12 +183,155 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pricingType, setPricingType] = useState<'free' | 'paid' | 'custom'>('free');
   const [customPrice, setCustomPrice] = useState('');
+  const [createForm, setCreateForm] = useState({
+    type: 'webinar' as EventType,
+    title: '',
+    description: '',
+    category: '',
+    durationMinutes: 60,
+    tags: '',
+    startDate: '',
+    startTime: '',
+    format: 'virtual' as 'virtual' | 'in-person',
+    locationOrLink: '',
+    maxAttendees: 100,
+    currency: 'INR',
+  });
+  const [createSubmitting, setCreateSubmitting] = useState(false);
   
   // Demo Days Modal State
   const [showDemoDaysModal, setShowDemoDaysModal] = useState(false);
 
+  const [events, setEvents] = useState<Event[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string>('');
+
+  const currentUser = getCurrentUser();
+  const currentUserId: string | null = currentUser?._id || null;
+
+  const fetchEvents = async () => {
+    setEventsLoading(true);
+    setEventsError('');
+    try {
+      const statusParam = activeTab === 'past' ? 'completed' : activeTab === 'upcoming' ? 'upcoming' : undefined;
+      const params: any = {};
+      if (statusParam) params.status = statusParam;
+      if (selectedEventType !== 'all') params.type = selectedEventType;
+
+      if (activeTab === 'my-events') {
+        const mode = (activeRole === 'expert' || activeRole === 'investor')
+          ? myEventsTab
+          : 'attending';
+        const resp = await api.get('/events/mine', { params: { mode } });
+        const mapped = (resp.data as ApiEvent[]).map(e => mapApiEventToUi(e, currentUserId, activeRole));
+        setEvents(mapped);
+      } else {
+        const resp = await api.get('/events', { params });
+        const mapped = (resp.data as ApiEvent[]).map(e => mapApiEventToUi(e, currentUserId, activeRole));
+        setEvents(mapped);
+      }
+    } catch (err: any) {
+      setEventsError(err.response?.data?.message || 'Failed to load events');
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, selectedEventType, myEventsTab, activeRole]);
+
+  const handleToggleBookmark = async (event: Event) => {
+    try {
+      if (!event.apiId) return;
+      const resp = await api.post(`/events/${event.apiId}/bookmark`);
+      const updated = mapApiEventToUi(resp.data as ApiEvent, currentUserId, activeRole);
+      setEvents(prev => prev.map(e => (e.id === event.id ? updated : e)));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleRegisterToggle = async (event: Event) => {
+    try {
+      if (!event.apiId) return;
+      const endpoint = event.isRegistered ? 'unregister' : 'register';
+      const resp = await api.post(`/events/${event.apiId}/${endpoint}`);
+      const updated = mapApiEventToUi(resp.data as ApiEvent, currentUserId, activeRole);
+      setEvents(prev => prev.map(e => (e.id === event.id ? updated : e)));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCreateEvent = async () => {
+    try {
+      setCreateSubmitting(true);
+
+      if (!createForm.title.trim() || !createForm.description.trim()) {
+        setEventsError('Please enter title and description');
+        return;
+      }
+      if (!createForm.startDate || !createForm.startTime) {
+        setEventsError('Please select date and time');
+        return;
+      }
+
+      const startAt = new Date(`${createForm.startDate}T${createForm.startTime}:00`);
+      const priceType = pricingType === 'free' ? 'free' : 'paid';
+      const priceAmount = pricingType === 'custom'
+        ? Number(customPrice || 0)
+        : pricingType === 'paid'
+          ? 499
+          : 0;
+
+      const payload: any = {
+        title: createForm.title,
+        description: createForm.description,
+        type: createForm.type,
+        category: createForm.category || undefined,
+        tags: createForm.tags,
+        startAt,
+        durationMinutes: Number(createForm.durationMinutes || 60),
+        format: createForm.format,
+        location: createForm.format === 'in-person' ? createForm.locationOrLink : undefined,
+        meetingLink: createForm.format === 'virtual' ? createForm.locationOrLink : undefined,
+        maxAttendees: Number(createForm.maxAttendees || 0) || undefined,
+        priceType,
+        priceAmount: priceType === 'paid' ? priceAmount : undefined,
+        currency: createForm.currency,
+        status: 'upcoming',
+      };
+
+      await api.post('/events', payload);
+      setShowCreateModal(false);
+      setCreateForm({
+        type: 'webinar',
+        title: '',
+        description: '',
+        category: '',
+        durationMinutes: 60,
+        tags: '',
+        startDate: '',
+        startTime: '',
+        format: 'virtual',
+        locationOrLink: '',
+        maxAttendees: 100,
+        currency: 'INR',
+      });
+      setPricingType('free');
+      setCustomPrice('');
+      fetchEvents();
+    } catch (err: any) {
+      setEventsError(err.response?.data?.message || 'Failed to publish event');
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
   // Derived Data
-  const filteredEvents = MOCK_EVENTS.filter(event => {
+  const filteredEvents = events.filter(event => {
     // Tab filtering
     if (activeTab === 'past' && event.status !== 'past') return false;
     if (activeTab === 'upcoming' && (event.status === 'past' || event.status === 'completed')) return false;
@@ -363,6 +510,17 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6">
+
+          {eventsError && (
+            <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 text-red-700 text-sm">
+              {eventsError}
+            </div>
+          )}
+          {eventsLoading && (
+            <div className="mb-6 p-4 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 text-sm">
+              Loading events...
+            </div>
+          )}
           
           {/* ROLE SPECIFIC WIDGETS */}
           <div className="mb-8">
@@ -477,13 +635,19 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                   </div>
 
                   <div className="absolute top-3 right-3">
-                     <div className="w-8 h-8 rounded-full bg-white/90 backdrop-blur flex items-center justify-center shadow-sm">
+                     <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         handleToggleBookmark(event);
+                       }}
+                       className="w-8 h-8 rounded-full bg-white/90 backdrop-blur flex items-center justify-center shadow-sm"
+                     >
                         {event.bookmarked ? (
                           <BookmarkCheck className="w-4 h-4 text-orange-500" />
                         ) : (
                           <Bookmark className="w-4 h-4 text-gray-400" />
                         )}
-                     </div>
+                     </button>
                   </div>
 
                   {/* Price Badge */}
@@ -530,8 +694,14 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                         {event.attendees} Registered
                      </div>
                      
-                     <button className="px-4 py-2 bg-gray-50 text-gray-900 text-xs font-bold rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                        {event.isRegistered ? 'View Details' : 'Register Now'}
+                     <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         handleRegisterToggle(event);
+                       }}
+                       className="px-4 py-2 bg-gray-50 text-gray-900 text-xs font-bold rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors"
+                     >
+                        {event.isRegistered ? 'Unregister' : 'Register Now'}
                      </button>
                   </div>
                 </div>
@@ -569,12 +739,20 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Event Type</label>
                 <div className="grid grid-cols-3 gap-3">
-                  {(activeRole === 'investor' 
-                     ? ['Demo Day', 'Investor Q&A', 'Networking'] 
-                     : ['Webinar', 'Workshop', 'Masterclass']
-                   ).map(type => (
-                    <button key={type} className="border border-gray-200 rounded-lg p-3 text-sm font-medium hover:border-blue-500 hover:bg-blue-50 text-left">
-                       {type}
+                  {([
+                    { label: 'Webinar', value: 'webinar' },
+                    { label: 'Workshop', value: 'workshop' },
+                    { label: 'Demo Day', value: 'demo-day' },
+                    { label: 'Networking', value: 'networking' },
+                    { label: 'Masterclass', value: 'masterclass' },
+                  ] as const).map(t => (
+                    <button
+                      key={t.value}
+                      onClick={() => setCreateForm(f => ({ ...f, type: t.value }))}
+                      className="border border-gray-200 rounded-lg p-3 text-sm font-medium hover:border-blue-500 hover:bg-blue-50 text-left"
+                      style={createForm.type === t.value ? { borderColor: brandColors.electricBlue, backgroundColor: '#EFF6FF' } : {}}
+                    >
+                      {t.label}
                     </button>
                   ))}
                 </div>
@@ -584,13 +762,21 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Event Title</label>
-                  <input type="text" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. Q1 Investor Showcase" />
+                  <input
+                    type="text"
+                    value={createForm.title}
+                    onChange={(e) => setCreateForm(f => ({ ...f, title: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="e.g. Q1 Investor Showcase"
+                  />
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <textarea 
                     rows={4}
+                    value={createForm.description}
+                    onChange={(e) => setCreateForm(f => ({ ...f, description: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none" 
                     placeholder="Describe what attendees will learn and why they should join..."
                   />
@@ -599,7 +785,11 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                    <select className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    <select
+                      value={createForm.category}
+                      onChange={(e) => setCreateForm(f => ({ ...f, category: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
                       <option value="">Select category</option>
                       <option value="technology">Technology</option>
                       <option value="business">Business</option>
@@ -613,14 +803,17 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
-                    <select className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    <select
+                      value={String(createForm.durationMinutes)}
+                      onChange={(e) => setCreateForm(f => ({ ...f, durationMinutes: Number(e.target.value || 60) }))}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
                       <option value="">Select duration</option>
                       <option value="30">30 minutes</option>
                       <option value="60">1 hour</option>
                       <option value="90">1.5 hours</option>
                       <option value="120">2 hours</option>
                       <option value="180">3 hours</option>
-                      <option value="custom">Custom</option>
                     </select>
                   </div>
                 </div>
@@ -629,6 +822,8 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
                   <input 
                     type="text" 
+                    value={createForm.tags}
+                    onChange={(e) => setCreateForm(f => ({ ...f, tags: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
                     placeholder="e.g. startup, funding, pitch (comma-separated)"
                   />
@@ -638,11 +833,21 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                    <input type="date" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input
+                      type="date"
+                      value={createForm.startDate}
+                      onChange={(e) => setCreateForm(f => ({ ...f, startDate: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
                   </div>
                   <div>
                      <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                     <input type="time" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                     <input
+                       type="time"
+                       value={createForm.startTime}
+                       onChange={(e) => setCreateForm(f => ({ ...f, startTime: e.target.value }))}
+                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                     />
                   </div>
                 </div>
               </div>
@@ -652,11 +857,19 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Event Format</label>
                   <div className="grid grid-cols-2 gap-3">
-                    <button className="border border-gray-200 rounded-lg p-3 text-sm font-medium hover:border-blue-500 hover:bg-blue-50 flex items-center gap-2">
+                    <button
+                      onClick={() => setCreateForm(f => ({ ...f, format: 'virtual' }))}
+                      className="border border-gray-200 rounded-lg p-3 text-sm font-medium hover:border-blue-500 hover:bg-blue-50 flex items-center gap-2"
+                      style={createForm.format === 'virtual' ? { borderColor: brandColors.electricBlue, backgroundColor: '#EFF6FF' } : {}}
+                    >
                       <Video className="w-4 h-4" />
                       Virtual
                     </button>
-                    <button className="border border-gray-200 rounded-lg p-3 text-sm font-medium hover:border-blue-500 hover:bg-blue-50 flex items-center gap-2">
+                    <button
+                      onClick={() => setCreateForm(f => ({ ...f, format: 'in-person' }))}
+                      className="border border-gray-200 rounded-lg p-3 text-sm font-medium hover:border-blue-500 hover:bg-blue-50 flex items-center gap-2"
+                      style={createForm.format === 'in-person' ? { borderColor: brandColors.electricBlue, backgroundColor: '#EFF6FF' } : {}}
+                    >
                       <MapPin className="w-4 h-4" />
                       In-Person
                     </button>
@@ -667,6 +880,8 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                   <label className="block text-sm font-medium text-gray-700 mb-1">Location / Meeting Link</label>
                   <input 
                     type="text" 
+                    value={createForm.locationOrLink}
+                    onChange={(e) => setCreateForm(f => ({ ...f, locationOrLink: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
                     placeholder="e.g. Zoom link or physical address"
                   />
@@ -677,6 +892,8 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                     <label className="block text-sm font-medium text-gray-700 mb-1">Max Attendees</label>
                     <input 
                       type="number" 
+                      value={createForm.maxAttendees}
+                      onChange={(e) => setCreateForm(f => ({ ...f, maxAttendees: Number(e.target.value || 0) }))}
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
                       placeholder="e.g. 100"
                     />
@@ -841,7 +1058,13 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
 
             <div className="p-6 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white">
                <button onClick={() => setShowCreateModal(false)} className="px-5 py-2.5 font-medium text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-               <button className="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md">Publish Event</button>
+               <button
+                 onClick={handleCreateEvent}
+                 disabled={createSubmitting}
+                 className={`px-5 py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md ${createSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+               >
+                 {createSubmitting ? 'Publishing...' : 'Publish Event'}
+               </button>
             </div>
           </div>
         </div>
@@ -1009,7 +1232,7 @@ export function EventsPage({ userRole: initialUserRole = 'founder' }: EventsPage
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setShowDemoDaysModal(false);
-                                setSelectedEvent(MOCK_EVENTS.find(e => e.id === demoDay.id) || null);
+                                setSelectedEvent(events.find(e => e.id === demoDay.id) || null);
                               }}
                               className="px-4 md:px-6 py-2.5 md:py-3 bg-white border-2 border-gray-200 text-gray-700 text-sm md:text-base font-bold rounded-lg hover:border-gray-300 transition-all flex items-center justify-center gap-2"
                             >

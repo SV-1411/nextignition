@@ -57,78 +57,6 @@ interface ProfilePageProps {
   onNavigateToSettings?: () => void;
 }
 
-const profileData: any = {
-  founder: {
-    name: 'Sarah Chen',
-    username: '@sarahchen',
-    tagline: 'Building the future of AI-powered customer support | YC S23 | Ex-Google',
-    location: 'San Francisco, CA',
-    avatar: '👩‍💼',
-    verified: true,
-    startup: {
-      logo: '🚀',
-      name: 'TechFlow AI',
-      mission: 'AI-powered customer support for modern teams',
-      stage: 'Growth'
-    },
-    stats: {
-      profileViews: '12.4K',
-      connections: 842,
-      followers: 3256,
-      engagement: '8.2%',
-      startupFollowers: 1234
-    },
-    bio: 'Serial entrepreneur with 10+ years of experience in AI and SaaS. Previously built and sold two startups. Passionate about democratizing AI for businesses of all sizes.',
-    skills: ['SaaS', 'AI/ML', 'Product Strategy', 'Fundraising', 'Team Building', 'Go-to-Market'],
-    lookingFor: ['Series A Funding', 'Technical Co-founder', 'Strategic Advisors'],
-    languages: ['English', 'Mandarin', 'Spanish']
-  },
-  expert: {
-    name: 'Dr. Michael Johnson',
-    username: '@drjohnson',
-    tagline: 'Growth Marketing Expert | Helped 100+ startups scale | Ex-Facebook, Google',
-    location: 'New York, NY',
-    avatar: '👨‍🏫',
-    verified: true,
-    title: 'Growth Marketing Expert',
-    experience: '15+ years, ex-Facebook / Google / YC Mentor',
-    expertise: ['Growth Marketing', 'Fundraising', 'Product Strategy', 'GTM', 'Sales'],
-    rating: 4.9,
-    reviews: 127,
-    stats: {
-      startupsHelped: 156,
-      totalSessions: 423,
-      avgRating: 4.9,
-      revenueMonth: '$12.4K',
-      revenueLifetime: '$156K'
-    },
-    availableFor: ['1:1 Mentorship', 'Workshops', 'Advisory Board'],
-    industries: ['SaaS', 'FinTech', 'HealthTech', 'E-commerce']
-  },
-  investor: {
-    name: 'Jennifer Park',
-    username: '@jenniferpark',
-    tagline: 'Partner at Accel Ventures | Early-stage SaaS & FinTech | Board member at 8 startups',
-    location: 'Palo Alto, CA',
-    avatar: '👩‍💼',
-    verified: true,
-    title: 'Partner at Accel Ventures',
-    ticketSize: '$500K - $5M',
-    stages: ['Pre-seed', 'Seed', 'Series A'],
-    sectors: ['SaaS', 'FinTech', 'HealthTech', 'AI/ML'],
-    openToDeals: true,
-    stats: {
-      totalInvestments: 42,
-      exits: 8,
-      avgCheckSize: '$1.2M',
-      yearsInvesting: 12
-    },
-    thesis: 'I invest in exceptional founders building category-defining companies in enterprise software and fintech. Looking for strong product-market fit, clear path to $100M+ ARR, and teams that can execute at scale.',
-    lookingFor: ['Strong founding team', 'Clear traction (>$50K MRR)', 'Defensible technology', 'Large addressable market'],
-    dealBreakers: ['Single founder without advisory board', 'No technical co-founder for tech products', 'Unclear GTM strategy']
-  }
-};
-
 export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSettings }: ProfilePageProps) {
   const [activeTab, setActiveTab] = useState('Posts');
   const [showMenu, setShowMenu] = useState(false);
@@ -139,6 +67,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
   const [selectedPostType, setSelectedPostType] = useState<'text' | 'image' | 'video' | 'poll' | 'milestone' | 'document'>('text');
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>('');
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -147,17 +76,37 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
         try {
           const profile = await getProfile(currentUser.id);
           setUser({ ...currentUser, ...profile });
-        } catch (error) {
+        } catch (err: any) {
+          setError(err.response?.data?.message || 'Failed to load profile');
           setUser(currentUser);
         } finally {
           setLoading(false);
         }
+      } else {
+        setError('Please log in to view profile');
+        setLoading(false);
       }
     };
     fetchUserData();
   }, []);
 
-  const currentProfile = user ? {
+  if (loading) {
+    return (
+      <div className="bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-gray-600">Loading profile...</div>
+      </div>
+    );
+  }
+
+  if (error || !user) {
+    return (
+      <div className="bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-red-600">{error || 'Profile not found'}</div>
+      </div>
+    );
+  }
+
+  const currentProfile = {
     name: user.name,
     username: `@${user.name.toLowerCase().replace(/\s+/g, '')}`,
     avatar: user.name.charAt(0),
@@ -203,7 +152,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
       mission: 'Visionary Startup',
       stage: 'Idea'
     } : null
-  } : profileData[userRole];
+  };
 
   const tabs = userRole === 'founder'
     ? ['Posts', 'About', 'Media', 'Connections', 'Portfolio']
@@ -211,131 +160,12 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
       ? ['Posts', 'About', 'Media', 'Connections', 'Reviews', 'Services']
       : ['Posts', 'About', 'Media', 'Connections', 'Portfolio'];
 
-  // Mock posts
-  const posts = [
-    {
-      id: 1,
-      type: 'milestone',
-      content: '🎉 Excited to announce we just closed our Series A! $15M led by Sequoia Capital. Here\'s what we learned during the fundraising process...',
-      likes: 234,
-      comments: 45,
-      time: '2 hours ago',
-      pinned: true
-    },
-    {
-      id: 2,
-      type: 'article',
-      content: 'The 5 biggest mistakes I made in my first startup (and how to avoid them)',
-      likes: 156,
-      comments: 28,
-      time: '1 day ago',
-      pinned: false
-    },
-    {
-      id: 3,
-      type: 'update',
-      content: 'Just launched our new AI feature! Check it out and let me know what you think 🚀',
-      likes: 89,
-      comments: 12,
-      time: '3 days ago',
-      pinned: false
-    }
-  ];
-
-  // Mock connections
-  const connections = [
-    { name: 'Alex Rivera', role: 'Founder', company: 'StartupXYZ', avatar: '👨‍💻', mutual: 12 },
-    { name: 'Emily Zhang', role: 'Investor', company: 'Accel Partners', avatar: '👩‍💼', mutual: 24 },
-    { name: 'David Kim', role: 'Expert', company: 'Growth Advisor', avatar: '👨‍🏫', mutual: 8 },
-    { name: 'Lisa Brown', role: 'Founder', company: 'TechCo', avatar: '👩‍💼', mutual: 15 }
-  ];
-
-  // Mock reviews (for expert)
-  const reviews = [
-    {
-      reviewer: 'Sarah Johnson',
-      role: 'Founder at HealthTech',
-      rating: 5,
-      text: 'Michael helped us 10x our growth in just 3 months. His strategies were actionable and delivered real results.',
-      type: 'Mentorship Session',
-      time: '1 week ago',
-      avatar: '👩‍💼'
-    },
-    {
-      reviewer: 'Tom Wilson',
-      role: 'CEO at SaaS Startup',
-      rating: 5,
-      text: 'Best investment we made. Michael\'s expertise in growth marketing is unparalleled.',
-      type: 'Advisory',
-      time: '2 weeks ago',
-      avatar: '👨‍💼'
-    },
-    {
-      reviewer: 'Maria Garcia',
-      role: 'Founder at FinTech',
-      rating: 4,
-      text: 'Great insights on fundraising strategy. Helped us refine our pitch and close our seed round.',
-      type: 'Workshop',
-      time: '3 weeks ago',
-      avatar: '👩‍💻'
-    }
-  ];
-
-  // Mock portfolio (for investor)
-  const portfolio = [
-    {
-      name: 'Stripe',
-      logo: '💳',
-      description: 'Payment infrastructure for the internet',
-      stage: 'Series A',
-      sector: 'FinTech',
-      role: 'Lead Investor',
-      status: 'Exited'
-    },
-    {
-      name: 'Notion',
-      logo: '📝',
-      description: 'All-in-one workspace',
-      stage: 'Seed',
-      sector: 'SaaS',
-      role: 'Co-investor',
-      status: 'Active'
-    },
-    {
-      name: 'Figma',
-      logo: '🎨',
-      description: 'Collaborative design tool',
-      stage: 'Series A',
-      sector: 'SaaS',
-      role: 'Lead Investor',
-      status: 'Exited'
-    }
-  ];
-
-  // Mock services (for expert)
-  const services = [
-    {
-      title: '30-min Strategy Call',
-      price: '$299',
-      description: 'Quick consultation on your biggest growth challenge',
-      bullets: ['1:1 video call', 'Actionable insights', 'Follow-up notes'],
-      popular: false
-    },
-    {
-      title: 'Growth Audit Package',
-      price: '$1,499',
-      description: 'Comprehensive analysis of your growth strategy',
-      bullets: ['Full funnel analysis', '2-hour session', 'Detailed report', '30-day follow-up'],
-      popular: true
-    },
-    {
-      title: 'Monthly Advisory',
-      price: '$4,999/mo',
-      description: 'Ongoing strategic guidance for your startup',
-      bullets: ['4 sessions per month', 'Slack access', 'Team workshops', 'OKR planning'],
-      popular: false
-    }
-  ];
+  // Real data would come from API; show empty until integrated
+  const posts: { id: number; type: string; content: string; likes: number; comments: number; time: string; pinned: boolean }[] = [];
+  const connections: { name: string; role: string; company: string; avatar: string; mutual: number }[] = [];
+  const reviews: { reviewer: string; role: string; rating: number; text: string; type: string; time: string; avatar: string }[] = [];
+  const portfolio: { name: string; logo: string; description: string; stage: string; sector: string; role: string; status: string }[] = [];
+  const services: { title: string; price: string; description: string; bullets: string[]; popular: boolean }[] = [];
 
   return (
     <div className="bg-gray-50">

@@ -1,9 +1,9 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IMessage extends Document {
-    conversationId: mongoose.Schema.Types.ObjectId;
-    sender: mongoose.Schema.Types.ObjectId;
-    receiver: mongoose.Schema.Types.ObjectId;
+    conversationId: mongoose.Types.ObjectId;
+    sender: mongoose.Types.ObjectId;
+    receiver: mongoose.Types.ObjectId;
     content: string;
     isRead: boolean;
     type: 'text' | 'file' | 'image';

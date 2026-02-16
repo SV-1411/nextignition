@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronLeft,
@@ -22,6 +22,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
+import api from '../services/api';
 
 interface Step {
   id: number;
@@ -45,8 +46,10 @@ export function FundingPortalFounder() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [pitchDeckUploaded, setPitchDeckUploaded] = useState(true); // Track if pitch deck is uploaded
   const [showAIAnalysis, setShowAIAnalysis] = useState(false); // Track if AI analysis should show
-  const [showSubmitPopup, setShowSubmitPopup] = useState(false); // Track if submission popup should show
-  const [isSubmitted, setIsSubmitted] = useState(false); // Track if pitch has been submitted
+  const [showSubmitPopup, setShowSubmitPopup] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1050,6 +1053,10 @@ export function FundingPortalFounder() {
                   Are you sure you want to submit your pitch for review? Once submitted, your pitch will be visible to investors based on your selected plan.
                 </p>
 
+                {submitError && (
+                  <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">{submitError}</div>
+                )}
+
                 <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
                   <button
                     onClick={() => setShowSubmitPopup(false)}
@@ -1058,11 +1065,32 @@ export function FundingPortalFounder() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => setIsSubmitted(true)}
+                    onClick={async () => {
+                      setSubmitError('');
+                      setSubmitting(true);
+                      try {
+                        await api.post('/funding/applications', {
+                          title: startupName || 'Funding Application',
+                          pitchSummary: pitchSummary,
+                          fundingAsk: fundingAmount ? Number(fundingAmount) : undefined,
+                          currency: 'USD',
+                          equityOffered: equityPercentage ? Number(equityPercentage) : undefined,
+                          pitchDeckUrl: pitchDeckLink,
+                          demoVideoUrl: demoVideoLink,
+                          tags: selectedIndustries,
+                        });
+                        setIsSubmitted(true);
+                      } catch (err: any) {
+                        setSubmitError(err.response?.data?.message || 'Failed to submit pitch');
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }}
+                    disabled={submitting}
                     className="w-full sm:w-auto px-6 py-3 rounded-lg font-bold text-white transition-all hover:shadow-lg"
                     style={{ background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})` }}
                   >
-                    Submit Pitch
+                    {submitting ? 'Submitting...' : 'Submit Pitch'}
                   </button>
                 </div>
               </>

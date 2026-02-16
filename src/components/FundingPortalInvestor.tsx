@@ -26,9 +26,10 @@ import {
   Target
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
+import api from '../services/api';
 
 interface Startup {
-  id: number;
+  id: string;
   name: string;
   logo: string;
   tagline: string;
@@ -41,6 +42,19 @@ interface Startup {
   traction: string;
   founded: string;
   verified: boolean;
+}
+
+interface ApiStartup {
+  _id: string;
+  founder?: { _id: string; name: string; avatar?: string; role?: string };
+  name: string;
+  description: string;
+  industry: string;
+  stage: string;
+  location?: string;
+  equity?: number;
+  funding?: { target?: number; raised?: number; currency?: string };
+  createdAt: string;
 }
 
 interface FilterGroup {
@@ -75,21 +89,94 @@ export function FundingPortalInvestor() {
   const stages = ['Idea', 'MVP', 'Growth', 'Scaling'];
   const locations = ['India', 'US', 'UK', 'Singapore', 'Global'];
 
-  const startups: Startup[] = Array.from({ length: 12 }, (_, i) => ({
-    id: i + 1,
-    name: `Startup ${i + 1}`,
-    logo: '',
-    tagline: 'AI-powered analytics platform for modern businesses',
-    industry: i % 3 === 0 ? ['SaaS', 'AI/ML'] : i % 3 === 1 ? ['FinTech'] : ['HealthTech'],
-    stage: ['Idea', 'MVP', 'Growth', 'Scaling'][i % 4],
-    fundingAsk: `₹${(i + 1) * 50}L`,
-    equity: `${10 + (i % 3) * 5}%`,
-    location: ['Mumbai', 'Bangalore', 'Delhi', 'Pune'][i % 4],
-    teamSize: `${3 + (i % 5)}`,
-    traction: i % 2 === 0 ? '10K+ users' : '₹5L MRR',
-    founded: '2024',
-    verified: i % 2 === 0,
-  }));
+  const [startups, setStartups] = useState<Startup[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+
+  const formatMoney = (value?: number, currency = 'USD') => {
+    if (typeof value !== 'number') return '';
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(value);
+    } catch {
+      return `${currency} ${Math.round(value)}`;
+    }
+  };
+
+  const mapApiStartup = (s: ApiStartup): Startup => {
+    const currency = s.funding?.currency || 'USD';
+    const ask = typeof s.funding?.target === 'number' ? formatMoney(s.funding?.target, currency) : '';
+    const equity = typeof s.equity === 'number' ? `${s.equity}%` : '';
+    return {
+      id: s._id,
+      name: s.name,
+      logo: '',
+      tagline: s.description,
+      industry: s.industry ? [s.industry] : [],
+      stage: s.stage,
+      fundingAsk: ask,
+      equity,
+      location: s.location || '',
+      teamSize: '',
+      traction: typeof s.funding?.raised === 'number' ? `Raised ${formatMoney(s.funding?.raised, currency)}` : '',
+      founded: new Date(s.createdAt).getFullYear().toString(),
+      verified: true,
+    };
+  };
+
+  const fetchStartups = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [startupsResp, bookmarksResp] = await Promise.all([
+        api.get('/funding/startups'),
+        api.get('/funding/bookmarks').catch(() => ({ data: [] })),
+      ]);
+      const mapped = (startupsResp.data as ApiStartup[]).map(mapApiStartup);
+      setStartups(mapped);
+      const ids = new Set<string>((bookmarksResp.data as string[]) || []);
+      setBookmarkedIds(ids);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to load startups');
+      setStartups([]);
+      setBookmarkedIds(new Set());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStartups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleBookmark = async (startupId: string) => {
+    setBookmarkedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(startupId)) next.delete(startupId);
+      else next.add(startupId);
+      return next;
+    });
+    try {
+      const resp = await api.post(`/funding/startups/${startupId}/bookmark`);
+      setBookmarkedIds((prev) => {
+        const next = new Set(prev);
+        if (resp.data?.bookmarked) next.add(startupId);
+        else next.delete(startupId);
+        return next;
+      });
+    } catch {
+      // best-effort
+    }
+  };
+
+  const sendInterest = async (startupId: string) => {
+    try {
+      await api.post(`/funding/startups/${startupId}/interest`, {});
+    } catch {
+      // best-effort
+    }
+  };
 
   const toggleFilterGroup = (key: string) => {
     setFilterGroups(prev =>
@@ -140,6 +227,7 @@ export function FundingPortalInvestor() {
     } else if (direction === 'right') {
       // Interested
       console.log('Interested in startup:', startups[currentSwipeIndex].name);
+      void sendInterest(startups[currentSwipeIndex].id);
     } else if (direction === 'up') {
       // View full profile
       console.log('View profile:', startups[currentSwipeIndex].name);
@@ -381,6 +469,16 @@ export function FundingPortalInvestor() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
+        {error && (
+          <div className="p-4">
+            <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">{error}</div>
+          </div>
+        )}
+        {loading && (
+          <div className="p-4">
+            <div className="p-3 rounded-lg bg-gray-100 border border-gray-200 text-gray-700 text-sm">Loading startups...</div>
+          </div>
+        )}
         {/* Top Bar - Desktop */}
         <div className="hidden lg:block sticky top-0 bg-white border-b border-gray-200 z-20">
           <div className="px-6 py-4">
@@ -530,6 +628,7 @@ export function FundingPortalInvestor() {
                   <button
                     className="p-2 bg-green-500 text-white rounded-full hover:bg-green-600 transition-colors shadow-lg"
                     title="Interested"
+                    onClick={(e) => { e.stopPropagation(); void sendInterest(startup.id); }}
                   >
                     <ThumbsUp className="w-4 h-4" />
                   </button>
@@ -549,9 +648,10 @@ export function FundingPortalInvestor() {
                   <button
                     className="p-2 text-white rounded-full hover:bg-orange-600 transition-colors shadow-lg"
                     style={{ backgroundColor: brandColors.atomicOrange }}
-                    title="Add to Pipeline"
+                    title={bookmarkedIds.has(startup.id) ? 'Bookmarked' : 'Bookmark'}
+                    onClick={(e) => { e.stopPropagation(); void toggleBookmark(startup.id); }}
                   >
-                    <Plus className="w-4 h-4" />
+                    <Bookmark className="w-4 h-4" fill={bookmarkedIds.has(startup.id) ? 'currentColor' : 'none'} />
                   </button>
                 </div>
               </motion.div>

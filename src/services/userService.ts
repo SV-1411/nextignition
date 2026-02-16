@@ -10,6 +10,17 @@ export const updateProfile = async (profileData: any) => {
     return response.data;
 };
 
+export const uploadAvatar = async (file: File) => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const response = await api.post('/auth/avatar', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data as { avatar: string };
+};
+
 export const getExpertStats = async () => {
     const response = await api.get('/auth/expert-stats');
     return response.data;

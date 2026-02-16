@@ -47,9 +47,11 @@ import {
   Globe
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
+import api from '../services/api';
 
 interface Episode {
-  id: number;
+  id: string;
+  _id?: string;
   title: string;
   episodeNumber: number;
   duration: string;
@@ -88,6 +90,108 @@ export function PodcastsPage({ userRole = 'founder' }: PodcastsPageProps) {
   const [heroIndex, setHeroIndex] = useState(0);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [expandedFilter, setExpandedFilter] = useState<'tier' | 'category' | null>(null);
+  const [allEpisodes, setAllEpisodes] = useState<Episode[]>([]);
+  const [featuredEpisodes, setFeaturedEpisodes] = useState<Episode[]>([]);
+  const [recentlyPlayed, setRecentlyPlayed] = useState<Episode[]>([]);
+  const [recommended, setRecommended] = useState<Episode[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+
+  // Fetch episodes from API
+  useEffect(() => {
+    fetchEpisodes();
+    fetchFeaturedEpisodes();
+    fetchRecentlyPlayed();
+    fetchRecommended();
+  }, [activeTierFilter, activeCategoryFilter]);
+
+  const fetchEpisodes = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params: any = {};
+      if (activeTierFilter !== 'all') params.tier = activeTierFilter;
+      if (activeCategoryFilter !== 'all') params.category = activeCategoryFilter;
+      
+      const resp = await api.get('/podcasts', { params });
+      const mapped = (resp.data as any[]).map((ep: any) => ({
+        ...ep,
+        id: ep._id || String(ep.id),
+        publishDate: ep.publishDate 
+          ? new Date(ep.publishDate).toLocaleDateString()
+          : ep.publishDate,
+        host: {
+          name: ep.host?.name || 'Host',
+          avatar: ep.host?.avatar || 'H'
+        }
+      }));
+      setAllEpisodes(mapped);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to load podcasts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchFeaturedEpisodes = async () => {
+    try {
+      const resp = await api.get('/podcasts/featured');
+      const mapped = (resp.data as any[]).map((ep: any) => ({
+        ...ep,
+        id: ep._id || String(ep.id),
+        publishDate: ep.publishDate 
+          ? new Date(ep.publishDate).toLocaleDateString()
+          : ep.publishDate,
+        host: {
+          name: ep.host?.name || 'Host',
+          avatar: ep.host?.avatar || 'H'
+        }
+      }));
+      setFeaturedEpisodes(mapped);
+    } catch {
+      // Silent fail
+    }
+  };
+
+  const fetchRecentlyPlayed = async () => {
+    try {
+      const resp = await api.get('/podcasts/recently-played');
+      const mapped = (resp.data as any[]).map((ep: any) => ({
+        ...ep,
+        id: ep._id || String(ep.id),
+        publishDate: ep.publishDate 
+          ? new Date(ep.publishDate).toLocaleDateString()
+          : ep.publishDate,
+        host: {
+          name: ep.host?.name || 'Host',
+          avatar: ep.host?.avatar || 'H'
+        }
+      }));
+      setRecentlyPlayed(mapped);
+    } catch {
+      // Silent fail
+    }
+  };
+
+  const fetchRecommended = async () => {
+    try {
+      const resp = await api.get('/podcasts/recommended');
+      const mapped = (resp.data as any[]).map((ep: any) => ({
+        ...ep,
+        id: ep._id || String(ep.id),
+        publishDate: ep.publishDate 
+          ? new Date(ep.publishDate).toLocaleDateString()
+          : ep.publishDate,
+        host: {
+          name: ep.host?.name || 'Host',
+          avatar: ep.host?.avatar || 'H'
+        }
+      }));
+      setRecommended(mapped);
+    } catch {
+      // Silent fail
+    }
+  };
 
   const tierFilters = [
     { value: 'all', label: 'All' },
@@ -105,89 +209,6 @@ export function PodcastsPage({ userRole = 'founder' }: PodcastsPageProps) {
     { value: 'marketing', label: 'Marketing' },
     { value: 'tech', label: 'Tech' },
   ];
-
-  const featuredEpisodes: Episode[] = [
-    {
-      id: 1,
-      title: 'Building a $10M ARR SaaS from Scratch',
-      episodeNumber: 42,
-      duration: '58 min',
-      durationSeconds: 3480,
-      publishDate: '2 days ago',
-      thumbnail: '',
-      host: { name: 'Sarah Chen', avatar: 'SC' },
-      tier: 'pro',
-      category: 'saas',
-      description: 'Learn how to scale your SaaS business',
-      isBookmarked: false,
-      plays: 12500,
-      isVideo: true,
-    },
-    {
-      id: 2,
-      title: 'The Future of AI in Startups',
-      episodeNumber: 43,
-      duration: '45 min',
-      durationSeconds: 2700,
-      publishDate: '5 days ago',
-      thumbnail: '',
-      host: { name: 'Michael Park', avatar: 'MP' },
-      tier: 'elite',
-      category: 'tech',
-      description: 'Expert insights on AI integration',
-      isBookmarked: true,
-      plays: 8900,
-      isVideo: true,
-    },
-    {
-      id: 3,
-      title: 'Fundraising Masterclass 2026',
-      episodeNumber: 44,
-      duration: '62 min',
-      durationSeconds: 3720,
-      publishDate: '1 week ago',
-      thumbnail: '',
-      host: { name: 'Emily Davis', avatar: 'ED' },
-      tier: 'expert',
-      category: 'fintech',
-      description: 'Master the art of fundraising',
-      isBookmarked: false,
-      plays: 15200,
-      isVideo: false,
-    },
-  ];
-
-  const allEpisodes: Episode[] = Array.from({ length: 16 }, (_, i) => ({
-    id: i + 10,
-    title: [
-      'Product-Market Fit Strategies',
-      'Growth Hacking for Startups',
-      'Customer Acquisition Playbook',
-      'Building Remote Teams',
-      'Legal Essentials for Founders',
-      'Marketing on a Budget',
-      'Technical Co-Founder Guide',
-      'Scaling Your Startup',
-    ][i % 8],
-    episodeNumber: 30 + i,
-    duration: ['42 min', '35 min', '28 min', '51 min'][i % 4],
-    durationSeconds: [2520, 2100, 1680, 3060][i % 4],
-    publishDate: ['2 days ago', '5 days ago', '1 week ago', '2 weeks ago'][i % 4],
-    thumbnail: '',
-    host: {
-      name: ['Sarah Chen', 'Michael Park', 'Emily Davis', 'John Smith'][i % 4],
-      avatar: ['SC', 'MP', 'ED', 'JS'][i % 4],
-    },
-    tier: ['free', 'pro', 'elite', 'expert'][i % 4] as any,
-    category: ['saas', 'fintech', 'healthtech', 'marketing', 'tech'][i % 5],
-    description: 'Essential insights for startup success',
-    isBookmarked: i % 5 === 0,
-    plays: 1000 + i * 500,
-    isVideo: i % 3 === 0,
-  }));
-
-  const recentlyPlayed = allEpisodes.slice(0, 5);
-  const recommended = allEpisodes.slice(5, 8);
 
   const getTierColor = (tier: string) => {
     const colors: Record<string, string> = {
@@ -225,11 +246,12 @@ export function PodcastsPage({ userRole = 'founder' }: PodcastsPageProps) {
 
   // Hero carousel auto-advance
   useEffect(() => {
+    if (featuredEpisodes.length === 0) return;
     const interval = setInterval(() => {
       setHeroIndex((prev) => (prev + 1) % featuredEpisodes.length);
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [featuredEpisodes]);
 
   // Simulate playback progress
   useEffect(() => {
@@ -446,6 +468,16 @@ export function PodcastsPage({ userRole = 'founder' }: PodcastsPageProps) {
 
         {/* Podcast Grid */}
         <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8">
+          {error && (
+            <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-100 text-red-700">
+              {error}
+            </div>
+          )}
+          {loading && (
+            <div className="mb-4 p-4 rounded-lg bg-gray-100 border border-gray-200 text-gray-700">
+              Loading podcasts...
+            </div>
+          )}
           <div className="flex gap-8">
             {/* Main Grid */}
             <div className="flex-1">

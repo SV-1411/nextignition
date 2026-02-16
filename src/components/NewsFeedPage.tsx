@@ -32,9 +32,12 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
+import api from '../services/api';
+import { useEffect } from 'react';
 
 interface NewsArticle {
-  id: number;
+  id: string;
+  _id?: string;
   headline: string;
   summary: string;
   content: string;
@@ -60,7 +63,53 @@ export function NewsFeedPage() {
   const [selectedLocation, setSelectedLocation] = useState('global');
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
-  const [bookmarkedArticles, setBookmarkedArticles] = useState<number[]>([]);
+  const [bookmarkedArticles, setBookmarkedArticles] = useState<string[]>([]);
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+
+  // Fetch articles from API
+  useEffect(() => {
+    fetchArticles();
+  }, [selectedCategories, selectedLocation, selectedIndustries]);
+
+  const fetchArticles = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params: any = {};
+      if (selectedCategories.length > 0) params.category = selectedCategories[0];
+      if (selectedLocation !== 'global') params.location = selectedLocation;
+      if (selectedIndustries.length > 0) params.industry = selectedIndustries[0];
+      
+      const resp = await api.get('/news', { params });
+      const mapped = (resp.data as any[]).map((article: any) => ({
+        ...article,
+        id: article._id || String(article.id),
+        publishDate: article.publishDate 
+          ? new Date(article.publishDate).toLocaleDateString()
+          : article.publishDate,
+        source: {
+          name: article.source?.name || 'News Source',
+          logo: article.source?.logo || 'NS'
+        }
+      }));
+      setArticles(mapped);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to load news articles');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTrendingTopics = async () => {
+    try {
+      const resp = await api.get('/news/trending');
+      return resp.data as { tag: string; count: number }[];
+    } catch {
+      return [];
+    }
+  };
 
   const categories = [
     { id: 'funding', label: 'Funding Announcements', icon: DollarSign, color: '#10B981' },
@@ -82,34 +131,6 @@ export function NewsFeedPage() {
     'SaaS', 'FinTech', 'HealthTech', 'EdTech', 'E-commerce', 
     'AI/ML', 'Blockchain', 'CleanTech', 'AgriTech', 'Marketing'
   ];
-
-  const articles: NewsArticle[] = Array.from({ length: 12 }, (_, i) => ({
-    id: i + 1,
-    headline: [
-      'AI Startup Raises $50M Series B to Revolutionize Enterprise Automation',
-      'New SaaS Platform Launches to Solve Remote Team Collaboration',
-      'Global VC Funding Hits Record High in Q1 2026',
-      'Major Acquisition: TechGiant Buys AI Startup for $2.5B',
-      'Industry Report: The Future of FinTech in Emerging Markets',
-      'Breakthrough Product Launch Disrupts Healthcare Industry',
-      'Market Analysis: How AI is Reshaping Investment Strategies',
-      'Exclusive: Inside the $100M Exit Strategy',
-    ][i % 8],
-    summary: 'A comprehensive look at how this development is reshaping the industry landscape and what it means for founders and investors.',
-    content: 'Full article content would go here...',
-    category: ['funding', 'product-launch', 'market-trends', 'acquisition', 'industry-news'][i % 5] as any,
-    source: {
-      name: ['TechCrunch', 'YourStory', 'Inc42', 'VentureBeat', 'TechInAsia'][i % 5],
-      logo: ['TC', 'YS', 'I42', 'VB', 'TIA'][i % 5],
-    },
-    author: ['Sarah Johnson', 'Michael Chen', 'Emily Davis', 'John Smith'][i % 4],
-    publishDate: ['2 hours ago', '5 hours ago', '1 day ago', '2 days ago'][i % 4],
-    readTime: ['5 min', '8 min', '3 min', '10 min'][i % 4],
-    isBookmarked: false,
-    views: 1200 + i * 300,
-    location: ['global', 'india', 'us', 'europe', 'asia'][i % 5],
-    industries: [industries[i % industries.length], industries[(i + 1) % industries.length]],
-  }));
 
   const trendingTopics = [
     { tag: 'AI', count: 245 },
@@ -136,7 +157,7 @@ export function NewsFeedPage() {
     );
   };
 
-  const toggleBookmark = (articleId: number) => {
+  const toggleBookmark = (articleId: string) => {
     setBookmarkedArticles(prev =>
       prev.includes(articleId)
         ? prev.filter(id => id !== articleId)
@@ -376,6 +397,16 @@ export function NewsFeedPage() {
 
         {/* News Cards Grid */}
         <div className="max-w-6xl mx-auto px-4 lg:px-8 py-8">
+          {error && (
+            <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-100 text-red-700">
+              {error}
+            </div>
+          )}
+          {loading && (
+            <div className="mb-4 p-4 rounded-lg bg-gray-100 border border-gray-200 text-gray-700">
+              Loading news articles...
+            </div>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {articles.map((article, index) => {
               const CategoryIcon = getCategoryIcon(article.category);

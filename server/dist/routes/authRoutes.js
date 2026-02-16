@@ -1,0 +1,21 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const authController_1 = require("../controllers/authController");
+const auth_1 = require("../middleware/auth");
+const upload_1 = require("../middleware/upload");
+const userController_1 = require("../controllers/userController");
+const router = express_1.default.Router();
+router.post('/register', authController_1.register);
+router.post('/login', authController_1.login);
+router.get('/me', auth_1.protect, authController_1.getMe);
+router.get('/profile/:id', authController_1.getProfile);
+router.put('/profile', auth_1.protect, authController_1.updateProfile);
+router.post('/avatar', auth_1.protect, upload_1.upload.single('avatar'), userController_1.uploadAvatar);
+router.get('/users', authController_1.getUsersByRole);
+router.get('/search', authController_1.searchUsers);
+router.put('/switch-role', auth_1.protect, authController_1.switchRole);
+exports.default = router;

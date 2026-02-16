@@ -10,6 +10,7 @@ export interface IUser extends Document {
     roles: UserRole[]; // Support for multiple roles
     avatar?: string;
     isVerified: boolean;
+    verificationBannerDismissedUntil?: Date;
     profile: {
         bio?: string;
         skills: string[];
@@ -44,6 +45,7 @@ const UserSchema: Schema = new Schema(
         }],
         avatar: { type: String },
         isVerified: { type: Boolean, default: false },
+        verificationBannerDismissedUntil: { type: Date },
         profile: {
             bio: { type: String },
             skills: [{ type: String }],

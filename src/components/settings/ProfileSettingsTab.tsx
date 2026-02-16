@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, MapPin, Globe, Trash2, Upload, Video, X, Check, Linkedin, Twitter, Github, Instagram } from 'lucide-react';
 import { brandColors } from '../../utils/colors';
-import { updateProfile, getProfile } from '../../services/userService';
+import { updateProfile, getProfile, uploadAvatar } from '../../services/userService';
 import { getCurrentUser } from '../../services/authService';
 
 interface ProfileSettingsTabProps {
@@ -10,11 +10,14 @@ interface ProfileSettingsTabProps {
 
 export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [bio, setBio] = useState('');
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [location, setLocation] = useState('');
   const [website, setWebsite] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isUsernameAvailable, setIsUsernameAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -30,6 +33,7 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
           setBio(profile.profile?.bio || '');
           setLocation(profile.profile?.location || '');
           setWebsite(profile.profile?.website || '');
+          setAvatarUrl(profile.avatar || user.avatar || '');
         } catch (error) {
           console.error('Error fetching profile', error);
         } finally {
@@ -37,8 +41,43 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
         }
       }
     };
+
     fetchProfile();
   }, []);
+
+  const handleAvatarPick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleTakePhoto = () => {
+    cameraInputRef.current?.click();
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploading(true);
+      const res = await uploadAvatar(file);
+      setAvatarUrl(res.avatar);
+
+      const current = getCurrentUser();
+      if (current) {
+        const updated = { ...current, avatar: res.avatar };
+        localStorage.setItem('user', JSON.stringify(updated));
+      }
+
+      setMessage('Profile photo updated!');
+      setTimeout(() => setMessage(''), 3000);
+    } catch {
+      setMessage('Failed to upload photo.');
+      setTimeout(() => setMessage(''), 3000);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleSave = async () => {
     try {
@@ -68,6 +107,12 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
         <p className="text-gray-600">Manage your public profile information</p>
       </div>
 
+      {message && (
+        <div className="mb-6 p-4 rounded-lg bg-gray-100 border border-gray-200 text-gray-700">
+          {message}
+        </div>
+      )}
+
       {/* Section 1: Profile Header */}
       <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
         <h2 className="text-xl font-bold mb-6">Profile Header</h2>
@@ -89,8 +134,12 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
         {/* Profile Picture */}
         <div className="flex items-start gap-6 mb-6">
           <div className="relative">
-            <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-orange-600 rounded-full flex items-center justify-center text-white text-4xl font-bold cursor-pointer group">
-              JD
+            <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-orange-600 rounded-full flex items-center justify-center text-white text-4xl font-bold cursor-pointer group overflow-hidden">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                'JD'
+              )}
               <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Camera className="w-8 h-8 text-white" />
               </div>
@@ -102,10 +151,36 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
               Upload a clear, professional photo. Max 5MB (JPG, PNG)
             </p>
             <div className="flex gap-3">
-              <button className="px-4 py-2 rounded-lg font-medium text-sm text-white"
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+              <button
+                onClick={handleAvatarPick}
+                disabled={isUploading}
+                className="px-4 py-2 rounded-lg font-medium text-sm text-white disabled:opacity-60"
                 style={{ background: brandColors.electricBlue }}>
                 <Upload className="w-4 h-4 inline mr-2" />
-                Upload Photo
+                {isUploading ? 'Uploading...' : 'Upload Photo'}
+              </button>
+              <button
+                onClick={handleTakePhoto}
+                disabled={isUploading}
+                className="px-4 py-2 border border-gray-300 rounded-lg font-medium text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                <Camera className="w-4 h-4 inline mr-2" />
+                Take Photo
               </button>
               <button className="px-4 py-2 border border-gray-300 rounded-lg font-medium text-sm text-gray-700 hover:bg-gray-50">
                 <Trash2 className="w-4 h-4 inline mr-2" />
@@ -128,7 +203,8 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
             </label>
             <input
               type="text"
-              defaultValue="John Doe"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
               maxLength={50}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
@@ -188,7 +264,8 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
               <input
                 type="text"
                 placeholder="City, State, Country"
-                defaultValue="Mumbai, Maharashtra, India"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -202,7 +279,8 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
               <input
                 type="url"
                 placeholder="https://yourwebsite.com"
-                defaultValue="https://johndoe.com"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -392,7 +470,10 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
           <button className="px-6 py-2 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50">
             Cancel
           </button>
-          <button className="px-6 py-2 rounded-lg font-bold text-white"
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="px-6 py-2 rounded-lg font-bold text-white disabled:opacity-60"
             style={{ background: brandColors.electricBlue }}>
             Save Changes
           </button>

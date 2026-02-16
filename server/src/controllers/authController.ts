@@ -36,7 +36,8 @@ export const register = async (req: Request, res: Response) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                token: generateToken(user._id as string, user.role),
+                avatar: user.avatar,
+                token: generateToken(user._id.toString(), user.role),
             });
         }
     } catch (error) {
@@ -57,8 +58,10 @@ export const login = async (req: Request, res: Response) => {
                 email: user.email,
                 role: user.role,
                 roles: user.roles,
+                avatar: user.avatar,
+                verificationBannerDismissedUntil: (user as any).verificationBannerDismissedUntil,
                 profile: user.profile,
-                token: generateToken(user._id as string, user.role),
+                token: generateToken(user._id.toString(), user.role),
             });
         } else {
             res.status(401).json({ message: 'Invalid email or password' });
@@ -185,7 +188,7 @@ export const switchRole = async (req: AuthRequest, res: Response) => {
             role: user.role,
             roles: user.roles,
             profile: user.profile,
-            token: generateToken(user._id as string, user.role),
+            token: generateToken(user._id.toString(), user.role),
         });
     } catch (error) {
         res.status(500).json({ message: 'Server error' });

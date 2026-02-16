@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import Post from '../models/Post';
 import { AuthRequest } from '../middleware/auth';
+import { io } from '../index';
 
 export const createPost = async (req: AuthRequest, res: Response) => {
     try {
@@ -15,6 +16,7 @@ export const createPost = async (req: AuthRequest, res: Response) => {
         });
 
         const populatedPost = await post.populate('author', 'name role avatar');
+        io.emit('feed_post_created', populatedPost);
         res.status(201).json(populatedPost);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
@@ -70,6 +72,23 @@ export const addComment = async (req: AuthRequest, res: Response) => {
         await post.save();
         const updatedPost = await Post.findById(req.params.id).populate('comments.user', 'name avatar');
         res.json(updatedPost);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const sharePost = async (req: AuthRequest, res: Response) => {
+    try {
+        const post = await Post.findById(req.params.id);
+        if (!post) {
+            return res.status(404).json({ message: 'Post not found' });
+        }
+
+        post.shares = (post.shares || 0) + 1;
+        await post.save();
+
+        io.emit('feed_post_shared', { postId: String(post._id), shares: post.shares });
+        res.json({ postId: String(post._id), shares: post.shares });
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
     }

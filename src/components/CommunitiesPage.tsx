@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
+import api from '../services/api';
+import { getCurrentUser } from '../services/authService';
 import {
   Hash,
   Volume2,
@@ -53,337 +55,151 @@ interface CommunitiesPageProps {
   userId: number;
 }
 
-interface Community {
-  id: number;
+interface ApiCommunity {
+  _id: string;
   name: string;
   icon: string;
   roleExclusive?: string;
   unreadCount?: number;
   memberCount: number;
   description: string;
+  allowedRoles: string[];
 }
 
-interface Channel {
-  id: number;
+interface ApiChannel {
+  _id: string;
   name: string;
   type: 'text' | 'voice';
-  icon?: string;
   description: string;
   readOnly?: boolean;
   unreadCount?: number;
 }
 
-interface Message {
-  id: number;
-  userId: number;
-  userName: string;
-  userRole: string;
-  avatar: string;
+interface ApiMessage {
+  _id: string;
+  userId: {
+    _id: string;
+    name: string;
+    role: string;
+    avatar?: string;
+  };
   content: string;
-  timestamp: string;
-  reactions?: { emoji: string; count: number; users: number[] }[];
-  type?: 'system' | 'milestone' | 'poll' | 'shared-post';
+  type?: 'text' | 'system' | 'milestone' | 'poll';
+  reactions?: { emoji: string; count: number; users: string[] }[];
   threadCount?: number;
   pinned?: boolean;
   pollOptions?: { text: string; votes: number }[];
   milestoneData?: { title: string; description: string };
+  createdAt: string;
 }
 
-interface Member {
-  id: number;
+interface ApiMember {
+  _id: string;
   name: string;
   role: string;
-  avatar: string;
-  online: boolean;
-  badge?: 'moderator' | 'founder' | 'expert' | 'investor';
+  avatar?: string;
+  isVerified?: boolean;
 }
 
 export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
-  const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
-  const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
+  const [selectedCommunity, setSelectedCommunity] = useState<ApiCommunity | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<ApiChannel | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [showMemberList, setShowMemberList] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [mobileView, setMobileView] = useState<'communities' | 'channels' | 'chat'>('communities');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['text-channels']);
+  
+  // Data states
+  const [communities, setCommunities] = useState<ApiCommunity[]>([]);
+  const [channels, setChannels] = useState<ApiChannel[]>([]);
+  const [messages, setMessages] = useState<ApiMessage[]>([]);
+  const [members, setMembers] = useState<ApiMember[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const currentUser = getCurrentUser();
 
-  // Role-specific communities
-  const getCommunitiesForRole = (): Community[] => {
-    const commonCommunities: Community[] = [
-      {
-        id: 100,
-        name: 'Announcements',
-        icon: '📢',
-        memberCount: 1247,
-        description: 'Platform-wide announcements and updates'
-      },
-      {
-        id: 101,
-        name: 'Intros & Networking',
-        icon: '🤝',
-        memberCount: 892,
-        description: 'Introduce yourself and network'
-      },
-      {
-        id: 102,
-        name: 'SaaS Founders',
-        icon: '💡',
-        memberCount: 456,
-        description: 'Community for SaaS startup founders'
-      },
-      {
-        id: 103,
-        name: 'HealthTech Founders',
-        icon: '🏥',
-        memberCount: 234,
-        description: 'Healthcare technology innovators'
-      }
-    ];
+  // Fetch communities on mount
+  useEffect(() => {
+    fetchCommunities();
+  }, []);
 
-    if (userRole === 'founder') {
-      return [
-        {
-          id: 1,
-          name: 'Founder Community',
-          icon: '🚀',
-          roleExclusive: 'Founders Only',
-          unreadCount: 12,
-          memberCount: 587,
-          description: 'Exclusive space for verified founders'
-        },
-        {
-          id: 2,
-          name: 'Early Stage',
-          icon: '🌱',
-          memberCount: 342,
-          description: 'Idea to MVP stage founders'
-        },
-        {
-          id: 3,
-          name: 'Growth Stage',
-          icon: '📈',
-          memberCount: 189,
-          description: 'Scaling and growth discussions'
-        },
-        ...commonCommunities
-      ];
-    } else if (userRole === 'expert') {
-      return [
-        {
-          id: 4,
-          name: 'Expert Community',
-          icon: '🎓',
-          roleExclusive: 'Verified Experts',
-          unreadCount: 8,
-          memberCount: 234,
-          description: 'Expert advisors and consultants'
-        },
-        {
-          id: 5,
-          name: 'SaaS Experts',
-          icon: '🚀',
-          memberCount: 156,
-          description: 'SaaS industry experts'
-        },
-        {
-          id: 6,
-          name: 'Marketing Experts',
-          icon: '💡',
-          memberCount: 198,
-          description: 'Marketing and growth specialists'
-        },
-        ...commonCommunities
-      ];
-    } else {
-      return [
-        {
-          id: 7,
-          name: 'Investor Community',
-          icon: '💼',
-          roleExclusive: 'Verified Investors',
-          unreadCount: 5,
-          memberCount: 145,
-          description: 'Exclusive investor network'
-        },
-        {
-          id: 8,
-          name: 'FinTech Investors',
-          icon: '💰',
-          memberCount: 89,
-          description: 'Financial technology investors'
-        },
-        {
-          id: 9,
-          name: 'DeepTech Investors',
-          icon: '🔬',
-          memberCount: 67,
-          description: 'Deep technology and research'
-        },
-        ...commonCommunities
-      ];
+  // Fetch channels when community selected
+  useEffect(() => {
+    if (selectedCommunity) {
+      fetchChannels(selectedCommunity._id);
+      fetchMembers(selectedCommunity._id);
+    }
+  }, [selectedCommunity]);
+
+  // Fetch messages when channel selected
+  useEffect(() => {
+    if (selectedChannel) {
+      fetchMessages(selectedChannel._id);
+    }
+  }, [selectedChannel]);
+
+  const fetchCommunities = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/communities');
+      setCommunities(res.data || []);
+      setError('');
+    } catch (err: any) {
+      setError('Failed to load communities');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Role-specific channels
-  const getChannelsForCommunity = (communityId: number): Channel[] => {
-    if (userRole === 'founder' && communityId === 1) {
-      return [
-        { id: 1, name: 'announcements', type: 'text', icon: '📢', description: 'Important updates', readOnly: true },
-        { id: 2, name: 'introductions', type: 'text', icon: '👋', description: 'Introduce yourself', unreadCount: 3 },
-        { id: 3, name: 'general-chat', type: 'text', icon: '💬', description: 'General discussions', unreadCount: 12 },
-        { id: 4, name: 'ask-founders', type: 'text', icon: '🤔', description: 'Ask other founders', unreadCount: 5 },
-        { id: 5, name: 'product-feedback', type: 'text', icon: '🎯', description: 'Get product feedback' },
-        { id: 6, name: 'co-founder-search', type: 'text', icon: '💼', description: 'Find your co-founder' },
-        { id: 7, name: 'fundraising-tips', type: 'text', icon: '💰', description: 'Fundraising strategies' },
-        { id: 8, name: 'growth-hacks', type: 'text', icon: '📊', description: 'Growth and marketing' },
-        { id: 9, name: 'tech-stack', type: 'text', icon: '🛠️', description: 'Technical discussions' },
-        { id: 10, name: 'wins-milestones', type: 'text', icon: '🎉', description: 'Celebrate wins' },
-      ];
-    } else if (userRole === 'expert' && communityId === 4) {
-      return [
-        { id: 11, name: 'expert-lounge', type: 'text', icon: '🧠', description: 'Expert discussions' },
-        { id: 12, name: 'client-management', type: 'text', icon: '💼', description: 'Managing clients' },
-        { id: 13, name: 'pricing-strategies', type: 'text', icon: '💰', description: 'Pricing your services' },
-        { id: 14, name: 'resource-sharing', type: 'text', icon: '📚', description: 'Share resources' },
-        { id: 15, name: 'speaker-opportunities', type: 'text', icon: '🎤', description: 'Speaking gigs' },
-        { id: 16, name: 'success-stories', type: 'text', icon: '⭐', description: 'Client success stories' },
-      ];
-    } else if (userRole === 'investor' && communityId === 7) {
-      return [
-        { id: 17, name: 'co-investment-opps', type: 'text', icon: '🤝', description: 'Deal sharing', unreadCount: 2 },
-        { id: 18, name: 'market-trends', type: 'text', icon: '📊', description: 'Market analysis' },
-        { id: 19, name: 'legal-compliance', type: 'text', icon: '⚖️', description: 'Legal discussions' },
-        { id: 20, name: 'deal-flow-discussion', type: 'text', icon: '🎯', description: 'Deal flow strategies' },
-        { id: 21, name: 'portfolio-help', type: 'text', icon: '��', description: 'Support portfolio companies' },
-        { id: 22, name: 'global-expansion', type: 'text', icon: '🌐', description: 'International opportunities' },
-      ];
+  const fetchChannels = async (communityId: string) => {
+    try {
+      const res = await api.get(`/communities/${communityId}/channels`);
+      setChannels(res.data || []);
+    } catch {
+      setChannels([]);
     }
+  };
+
+  const fetchMessages = async (channelId: string) => {
+    try {
+      const res = await api.get(`/communities/channels/${channelId}/messages`);
+      setMessages(res.data || []);
+    } catch {
+      setMessages([]);
+    }
+  };
+
+  const fetchMembers = async (communityId: string) => {
+    try {
+      const res = await api.get(`/communities/${communityId}/members`);
+      setMembers(res.data || []);
+    } catch {
+      setMembers([]);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim() || !selectedChannel) return;
     
-    // Default channels for other communities
-    return [
-      { id: 101, name: 'general', type: 'text', icon: '💬', description: 'General discussions', unreadCount: 8 },
-      { id: 102, name: 'introductions', type: 'text', icon: '👋', description: 'Introduce yourself' },
-      { id: 103, name: 'resources', type: 'text', icon: '📚', description: 'Helpful resources' },
-    ];
+    try {
+      await api.post(`/communities/channels/${selectedChannel._id}/messages`, {
+        content: messageInput.trim(),
+        type: 'text'
+      });
+      setMessageInput('');
+      fetchMessages(selectedChannel._id);
+    } catch {
+      setError('Failed to send message');
+    }
   };
 
-  // Mock messages
-  const mockMessages: Message[] = [
-    {
-      id: 1,
-      userId: 101,
-      userName: 'Sarah Chen',
-      userRole: 'Founder at TechFlow AI',
-      avatar: '👩',
-      content: 'Hey everyone! Just launched our beta. Would love feedback from the community! 🚀',
-      timestamp: '2h ago',
-      reactions: [
-        { emoji: '👍', count: 12, users: [1, 2, 3] },
-        { emoji: '🚀', count: 8, users: [4, 5] },
-        { emoji: '🎉', count: 5, users: [6, 7] }
-      ],
-      threadCount: 4
-    },
-    {
-      id: 2,
-      userId: 102,
-      userName: 'Mike Rodriguez',
-      userRole: 'Growth Expert',
-      avatar: '👨',
-      content: '@Sarah Chen Congrats! I\'d be happy to take a look and provide some growth feedback. DM me!',
-      timestamp: '1h ago',
-      reactions: [
-        { emoji: '💯', count: 3, users: [1, 2] }
-      ]
-    },
-    {
-      id: 3,
-      userId: 103,
-      userName: 'Emma Williams',
-      userRole: 'Investor at Venture Partners',
-      avatar: '👩‍💼',
-      content: 'This is exactly the kind of innovation we\'re looking for in HealthTech. Let\'s connect!',
-      timestamp: '45m ago',
-      reactions: [
-        { emoji: '🔥', count: 6, users: [1, 2, 3] }
-      ]
-    },
-    {
-      id: 4,
-      userId: 104,
-      userName: 'System',
-      userRole: 'Platform',
-      avatar: '🤖',
-      content: 'David Park joined the community',
-      timestamp: '30m ago',
-      type: 'system'
-    },
-    {
-      id: 5,
-      userId: 105,
-      userName: 'Lisa Zhang',
-      userRole: 'Founder at HealthAI',
-      avatar: '👩‍⚕️',
-      content: '🏆 **MILESTONE ACHIEVED** 🏆\n\nJust hit $100K ARR! Thank you to everyone in this community for the support and advice along the way!',
-      timestamp: '15m ago',
-      type: 'milestone',
-      milestoneData: {
-        title: '$100K ARR Achieved',
-        description: 'First major revenue milestone'
-      },
-      reactions: [
-        { emoji: '🎉', count: 24, users: [1, 2, 3, 4, 5] },
-        { emoji: '👏', count: 18, users: [6, 7, 8] },
-        { emoji: '🚀', count: 15, users: [9, 10] }
-      ],
-      threadCount: 12
-    },
-    {
-      id: 6,
-      userId: 106,
-      userName: 'Alex Martinez',
-      userRole: 'CTO Advisor',
-      avatar: '👨‍💻',
-      content: '**Quick Poll:** What\'s your biggest challenge right now?',
-      timestamp: '10m ago',
-      type: 'poll',
-      pollOptions: [
-        { text: 'Finding product-market fit', votes: 42 },
-        { text: 'Hiring the right team', votes: 38 },
-        { text: 'Raising capital', votes: 56 },
-        { text: 'Scaling infrastructure', votes: 24 }
-      ]
-    },
-    {
-      id: 7,
-      userId: 107,
-      userName: 'Jordan Kim',
-      userRole: 'Founder at CloudScale',
-      avatar: '🧑',
-      content: 'For anyone struggling with AWS costs, here\'s a thread on how we reduced our bill by 60%: https://community.nextignition.com/threads/aws-cost-optimization',
-      timestamp: '5m ago',
-      reactions: [
-        { emoji: '🙏', count: 8, users: [1, 2] },
-        { emoji: '💡', count: 6, users: [3, 4] }
-      ]
-    }
-  ];
-
-  // Mock members
-  const mockMembers: Member[] = [
-    { id: 1, name: 'Sarah Chen', role: 'Founder at TechFlow', avatar: '👩', online: true, badge: 'founder' },
-    { id: 2, name: 'Mike Rodriguez', role: 'Growth Expert', avatar: '👨', online: true, badge: 'expert' },
-    { id: 3, name: 'Emma Williams', role: 'Investor', avatar: '👩‍💼', online: true, badge: 'investor' },
-    { id: 4, name: 'David Park', role: 'Founder', avatar: '👨‍💼', online: true, badge: 'founder' },
-    { id: 5, name: 'Lisa Zhang', role: 'Founder', avatar: '👩‍⚕️', online: true, badge: 'founder' },
-    { id: 6, name: 'Alex Martinez', role: 'CTO Advisor', avatar: '👨‍💻', online: true, badge: 'moderator' },
-    { id: 7, name: 'Jordan Kim', role: 'Founder', avatar: '🧑', online: true, badge: 'founder' },
-    { id: 8, name: 'Taylor Swift', role: 'Marketing Expert', avatar: '👩‍🎤', online: false, badge: 'expert' },
-  ];
-
-  const communities = getCommunitiesForRole();
-  const channels = selectedCommunity ? getChannelsForCommunity(selectedCommunity.id) : [];
+  const formatTimestamp = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString();
+  };
 
   const getBadgeIcon = (badge?: string) => {
     switch (badge) {
@@ -400,13 +216,6 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
     }
   };
 
-  const handleSendMessage = () => {
-    if (messageInput.trim()) {
-      console.log('Sending message:', messageInput);
-      setMessageInput('');
-    }
-  };
-
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev =>
       prev.includes(category)
@@ -415,7 +224,11 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
     );
   };
 
-  const onlineMemberCount = mockMembers.filter(m => m.online).length;
+  const onlineMemberCount = members.length;
+
+  const offlineMemberCount = 0;
+
+  const currentChannels: ApiChannel[] = selectedCommunity ? channels : [];
 
   // Mobile Communities List View
   const MobileCommunitiesList = () => (
@@ -426,7 +239,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {communities.map((community) => (
           <motion.div
-            key={community.id}
+            key={community._id}
             whileTap={{ scale: 0.98 }}
             onClick={() => {
               setSelectedCommunity(community);
@@ -486,7 +299,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
         <div className="text-xs font-bold text-gray-500 uppercase mb-2">Text Channels</div>
         {channels.filter(c => c.type === 'text').map((channel) => (
           <motion.div
-            key={channel.id}
+            key={channel._id}
             whileTap={{ scale: 0.98 }}
             onClick={() => {
               setSelectedChannel(channel);
@@ -528,7 +341,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
               <Hash className="w-5 h-5 text-gray-500" />
               <h1 className="font-bold">{selectedChannel?.name}</h1>
             </div>
-            <p className="text-xs text-gray-500">{onlineMemberCount} online · {mockMembers.length} members</p>
+            <p className="text-xs text-gray-500">{onlineMemberCount} online · {members.length} members</p>
           </div>
           <button onClick={() => setIsMuted(!isMuted)}>
             {isMuted ? <BellOff className="w-5 h-5 text-gray-400" /> : <Bell className="w-5 h-5 text-gray-600" />}
@@ -538,8 +351,8 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {mockMessages.map((message) => (
-          <MessageComponent key={message.id} message={message} isMobile />
+        {messages.map((message) => (
+          <MessageComponent key={message._id} message={message} isMobile />
         ))}
       </div>
 
@@ -582,7 +395,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
   );
 
   // Message Component
-  const MessageComponent = ({ message, isMobile = false }: { message: Message; isMobile?: boolean }) => {
+  const MessageComponent = ({ message, isMobile = false }: { message: ApiMessage; isMobile?: boolean }) => {
     if (message.type === 'system') {
       return (
         <div className="text-center text-sm text-gray-500 italic py-2">
@@ -599,12 +412,12 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
           className="border-2 border-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl p-4 shadow-lg"
         >
           <div className="flex items-start gap-3">
-            <div className="text-3xl">{message.avatar}</div>
+            <div className="text-3xl">{message.userId?.avatar || '👤'}</div>
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <Trophy className="w-5 h-5 text-yellow-600" />
-                <span className="font-bold">{message.userName}</span>
-                <span className="text-xs text-gray-500">{message.timestamp}</span>
+                <span className="font-bold">{message.userId?.name || 'Unknown'}</span>
+                <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
               </div>
               <div className="prose prose-sm max-w-none">
                 <p className="font-medium text-lg mb-1">{message.milestoneData?.title}</p>
@@ -636,13 +449,13 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       return (
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="flex items-start gap-3 mb-4">
-            <div className="text-2xl">{message.avatar}</div>
+            <div className="text-2xl">{message.userId?.avatar || '👤'}</div>
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <span className="font-bold text-sm">{message.userName}</span>
-                <span className="text-xs text-gray-500">{message.timestamp}</span>
+                <span className="font-bold text-sm">{message.userId?.name || 'Unknown'}</span>
+                <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
               </div>
-              <p className="text-sm text-gray-600">{message.userRole}</p>
+              <p className="text-sm text-gray-600">{message.userId?.role || ''}</p>
             </div>
           </div>
           <p className="mb-3 font-medium">{message.content}</p>
@@ -677,14 +490,14 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
     return (
       <div className={`group hover:bg-gray-50 ${isMobile ? 'p-2' : 'px-4 py-2'} rounded transition-colors`}>
         <div className="flex items-start gap-3">
-          <div className="text-2xl flex-shrink-0">{message.avatar}</div>
+          <div className="text-2xl flex-shrink-0">{message.userId?.avatar || '👤'}</div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="font-bold text-sm">{message.userName}</span>
-              <span className="text-xs text-gray-500">{message.timestamp}</span>
+              <span className="font-bold text-sm">{message.userId?.name || 'Unknown'}</span>
+              <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
               {message.pinned && <Pin className="w-3 h-3 text-yellow-600" />}
             </div>
-            <p className="text-xs text-gray-600 mb-2">{message.userRole}</p>
+            <p className="text-xs text-gray-600 mb-2">{message.userId?.role || ''}</p>
             <p className="text-sm text-gray-900 break-words">{message.content}</p>
             
             {message.reactions && (
@@ -771,7 +584,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
                 <div className="text-xs font-bold text-gray-400 uppercase px-2 py-2">Your Communities</div>
                 {communities.map((community) => (
                   <button
-                    key={community.id}
+                    key={community._id}
                     onClick={() => setSelectedCommunity(community)}
                     className="w-full flex items-center gap-3 px-2 py-2 rounded hover:bg-gray-800 transition-colors text-left group"
                   >
@@ -823,12 +636,12 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
                   </button>
                   {expandedCategories.includes('text-channels') && (
                     <div className="mt-1">
-                      {channels.filter(c => c.type === 'text').map((channel) => (
+                      {currentChannels.filter(c => c.type === 'text').map((channel) => (
                         <button
-                          key={channel.id}
+                          key={channel._id}
                           onClick={() => setSelectedChannel(channel)}
                           className={`w-full flex items-center gap-2 px-2 py-1.5 rounded transition-colors group ${
-                            selectedChannel?.id === channel.id
+                            selectedChannel?._id === channel._id
                               ? 'bg-gray-700 text-white'
                               : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
                           }`}
@@ -922,8 +735,8 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
               {/* Messages */}
               <div className="flex-1 overflow-y-auto bg-white">
                 <div className="max-w-4xl mx-auto py-4">
-                  {mockMessages.map((message) => (
-                    <MessageComponent key={message.id} message={message} />
+                  {messages.map((message) => (
+                    <MessageComponent key={message._id} message={message} />
                   ))}
                 </div>
               </div>
@@ -1033,7 +846,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
           <aside className="w-60 bg-gray-50 border-l border-gray-200 flex flex-col">
             <div className="p-4 border-b border-gray-200">
               <h3 className="font-bold text-sm text-gray-700">
-                Members — {mockMembers.length}
+                Members — {members.length}
               </h3>
             </div>
             <div className="flex-1 overflow-y-auto p-2">
@@ -1042,22 +855,20 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
                 <div className="px-2 py-1 text-xs font-bold text-gray-500 uppercase">
                   Online — {onlineMemberCount}
                 </div>
-                {mockMembers
-                  .filter((m) => m.online)
-                  .map((member) => (
+                {members.map((member) => (
                     <button
-                      key={member.id}
+                      key={member._id}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-200 transition-colors group"
                       title="View profile"
                     >
                       <div className="relative">
-                        <span className="text-xl">{member.avatar}</span>
+                        <span className="text-xl">{member.avatar || '👤'}</span>
                         <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-gray-50 rounded-full"></span>
                       </div>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="flex items-center gap-1">
                           <span className="text-sm font-medium text-gray-900 truncate">{member.name}</span>
-                          {getBadgeIcon(member.badge)}
+                          {member.isVerified && <Check className="w-3 h-3 text-blue-500" />}
                         </div>
                         <p className="text-xs text-gray-500 truncate">{member.role}</p>
                       </div>
@@ -1068,20 +879,19 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
               {/* Offline Members */}
               <div>
                 <div className="px-2 py-1 text-xs font-bold text-gray-500 uppercase">
-                  Offline — {mockMembers.length - onlineMemberCount}
+                  Offline — {offlineMemberCount}
                 </div>
-                {mockMembers
-                  .filter((m) => !m.online)
-                  .map((member) => (
+                {[]
+                  .map((member: ApiMember) => (
                     <button
-                      key={member.id}
+                      key={member._id}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-200 transition-colors opacity-60"
                     >
-                      <span className="text-xl">{member.avatar}</span>
+                      <span className="text-xl">{member.avatar || '👤'}</span>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="flex items-center gap-1">
                           <span className="text-sm font-medium text-gray-900 truncate">{member.name}</span>
-                          {getBadgeIcon(member.badge)}
+                          {member.isVerified && <Check className="w-3 h-3 text-blue-500" />}
                         </div>
                         <p className="text-xs text-gray-500 truncate">{member.role}</p>
                       </div>
@@ -1092,7 +902,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
 
             {/* Member count footer */}
             <div className="p-3 border-t border-gray-200 text-xs text-gray-500 text-center">
-              {onlineMemberCount} online · {mockMembers.length} total
+              {onlineMemberCount} online · {members.length} total
             </div>
           </aside>
         )}
