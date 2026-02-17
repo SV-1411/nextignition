@@ -8,7 +8,7 @@ export const createPost = async (req: AuthRequest, res: Response) => {
         const { content, image, industry, tags } = req.body;
 
         const post = await Post.create({
-            author: req.user.id,
+            author: req.user.id as any,
             content,
             image,
             industry,
@@ -41,9 +41,9 @@ export const likePost = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'Post not found' });
         }
 
-        const likeIndex = post.likes.indexOf(req.user.id);
+        const likeIndex = post.likes.indexOf(req.user.id as any);
         if (likeIndex === -1) {
-            post.likes.push(req.user.id);
+            post.likes.push(req.user.id as any);
         } else {
             post.likes.splice(likeIndex, 1);
         }
@@ -64,7 +64,7 @@ export const addComment = async (req: AuthRequest, res: Response) => {
         }
 
         post.comments.push({
-            user: req.user.id,
+            user: req.user.id as any,
             text,
             createdAt: new Date(),
         });

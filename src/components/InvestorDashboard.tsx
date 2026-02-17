@@ -18,6 +18,7 @@ import { DealFlowPipeline } from './DealFlowPipeline';
 import { InvestorAnalytics } from './InvestorAnalytics';
 import { useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'motion/react';
+import { logout } from '../services/authService';
 import { 
   Home, 
   TrendingUp, 
@@ -58,6 +59,7 @@ import {
   Download,
   Upload,
   Mic,
+  LogOut,
   Newspaper
 } from 'lucide-react';
 import logoImage from 'figma:asset/faed1dd832314fe381fd34c35312b9faa571832d.png';
@@ -70,6 +72,15 @@ import { RoleSwitcher, UserRole } from './RoleSwitcher';
 import { FounderDashboard } from './FounderDashboard';
 import { ExpertDashboard } from './ExpertDashboard';
 
+type DealFlowItem = {
+  id: number;
+  startup: string;
+  founder: string;
+  amount: string;
+  stage: string;
+  lastUpdate: string;
+};
+
 export function InvestorDashboard() {
   const [activeTab, setActiveTab] = useState('Home Feed');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -77,6 +88,14 @@ export function InvestorDashboard() {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [view, setView] = useState<'home' | 'discover' | 'pipeline' | 'portfolio' | 'dealroom'>('home');
   const [currentRole, setCurrentRole] = useState<UserRole>('investor');
+
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [initialMessageUserId, setInitialMessageUserId] = useState<string | undefined>(undefined);
+
+  const handleLogout = () => {
+    logout();
+    window.location.href = '/';
+  };
 
   const handleRoleChange = (newRole: UserRole) => {
     setCurrentRole(newRole);
@@ -489,13 +508,23 @@ export function InvestorDashboard() {
                   currentRole={currentRole} 
                   onRoleChange={handleRoleChange}
                 />
-              </div>
-              <button className="relative p-2 hover:bg-gray-100 rounded-full">
-                <Bell className="w-6 h-6" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
-              <div className="w-10 h-10 bg-gradient-to-br from-navy-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                JV
+                <button 
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className="relative p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <Bell className="w-6 h-6 text-gray-600" />
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                </button>
+                <button 
+                  onClick={handleLogout}
+                  className="p-2 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-full transition-colors"
+                  title="Logout"
+                >
+                  <LogOut className="w-6 h-6" />
+                </button>
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                  {currentUser?.name?.split(' ').map((n: any) => n[0]).join('').slice(0, 2).toUpperCase() || 'IV'}
+                </div>
               </div>
             </div>
           </div>
@@ -510,7 +539,7 @@ export function InvestorDashboard() {
 
           {/* Messages View */}
           {activeTab === 'Messages' && (
-            <MessagingPage userRole="investor" userId={1} />
+            <MessagingPage initialUserId={initialMessageUserId} />
           )}
 
           {/* Communities View */}

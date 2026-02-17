@@ -26,8 +26,13 @@ export function ProfileSettingsTab({ userRole }: ProfileSettingsTabProps) {
     const fetchProfile = async () => {
       const user = getCurrentUser();
       if (user) {
+        const userId = user.id || user._id;
+        if (!userId) {
+          setLoading(false);
+          return;
+        }
         try {
-          const profile = await getProfile(user.id);
+          const profile = await getProfile(userId);
           setFullName(user.name);
           setUsername(user.name.toLowerCase().replace(/\s+/g, ''));
           setBio(profile.profile?.bio || '');

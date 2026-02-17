@@ -21,6 +21,7 @@ import {
   Linkedin,
   Twitter,
   Clock,
+  AlignLeft,
   Video,
   FileText,
   Image as ImageIcon,
@@ -74,7 +75,14 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
       const currentUser = getCurrentUser();
       if (currentUser) {
         try {
-          const profile = await getProfile(currentUser.id);
+          const userId = currentUser.id || currentUser._id;
+          if (!userId) {
+            setError('User ID not found');
+            setUser(currentUser);
+            setLoading(false);
+            return;
+          }
+          const profile = await getProfile(userId);
           setUser({ ...currentUser, ...profile });
         } catch (err: any) {
           setError(err.response?.data?.message || 'Failed to load profile');
@@ -134,10 +142,12 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
     bio: user.profile?.bio || 'Passionate professional on NextIgnition',
     skills: user.profile?.skills || [],
     lookingFor: [],
+    dealBreakers: [],
     languages: ['English', 'Hindi'],
     title: user.profile?.title,
     experience: `${user.profile?.experience || 0} years`,
     expertise: user.profile?.skills || [],
+    availableFor: [],
     rating: 5.0,
     reviews: 0,
     ticketSize: '$0',
@@ -166,6 +176,22 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
   const reviews: { reviewer: string; role: string; rating: number; text: string; type: string; time: string; avatar: string }[] = [];
   const portfolio: { name: string; logo: string; description: string; stage: string; sector: string; role: string; status: string }[] = [];
   const services: { title: string; price: string; description: string; bullets: string[]; popular: boolean }[] = [];
+
+  type PostTypeOption = {
+    type: 'text' | 'image' | 'video' | 'poll' | 'milestone' | 'document';
+    icon: any;
+    label: string;
+    color: string;
+  };
+
+  const postTypes: PostTypeOption[] = [
+    { type: 'text', icon: AlignLeft, label: 'Text', color: brandColors.electricBlue },
+    { type: 'image', icon: ImageIcon, label: 'Image', color: brandColors.atomicOrange },
+    { type: 'video', icon: Video, label: 'Video', color: '#8B5CF6' },
+    { type: 'poll', icon: BarChart3, label: 'Poll', color: '#10B981' },
+    { type: 'milestone', icon: Trophy, label: 'Milestone', color: '#F59E0B' },
+    { type: 'document', icon: FileText, label: 'Doc', color: '#6B7280' },
+  ];
 
   return (
     <div className="bg-gray-50">
@@ -248,7 +274,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
                     <span className="text-gray-600">({currentProfile.reviews} reviews)</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {currentProfile.expertise.slice(0, 5).map((skill, index) => (
+                    {currentProfile.expertise.slice(0, 5).map((skill: string, index: number) => (
                       <span
                         key={index}
                         className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full"
@@ -638,7 +664,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
                       <>
                         <h4 className="font-bold mb-3">Skills & Focus Areas</h4>
                         <div className="flex flex-wrap gap-2 mb-6">
-                          {currentProfile.skills.map((skill, index) => (
+                          {currentProfile.skills.map((skill: string, index: number) => (
                             <span
                               key={index}
                               className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg"
@@ -669,7 +695,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
                       <>
                         <h4 className="font-bold mb-3">Areas of Expertise</h4>
                         <div className="flex flex-wrap gap-2 mb-6">
-                          {currentProfile.expertise.map((item, index) => (
+                          {currentProfile.expertise.map((item: string, index: number) => (
                             <span
                               key={index}
                               className="px-3 py-1.5 bg-purple-100 text-purple-700 text-sm font-medium rounded-lg"
@@ -681,7 +707,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
 
                         <h4 className="font-bold mb-3">Industries</h4>
                         <div className="flex flex-wrap gap-2 mb-6">
-                          {currentProfile.industries.map((item, index) => (
+                          {currentProfile.industries.map((item: string, index: number) => (
                             <span
                               key={index}
                               className="px-3 py-1.5 bg-orange-100 text-orange-700 text-sm font-medium rounded-lg"
@@ -693,7 +719,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
 
                         <h4 className="font-bold mb-3">Available For</h4>
                         <div className="flex flex-wrap gap-2">
-                          {currentProfile.availableFor.map((item, index) => (
+                          {(currentProfile.availableFor || []).map((item: string, index: number) => (
                             <span
                               key={index}
                               className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg"
@@ -719,7 +745,7 @@ export function ProfilePage({ userRole, isOwnProfile = true, onNavigateToSetting
 
                         <h4 className="font-bold mb-3 text-red-600">Deal Breakers</h4>
                         <ul className="space-y-2">
-                          {currentProfile.dealBreakers.map((item, index) => (
+                          {(currentProfile.dealBreakers || []).map((item: string, index: number) => (
                             <li key={index} className="flex items-start gap-2">
                               <Ban className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                               <span className="text-gray-700">{item}</span>

@@ -37,6 +37,13 @@ interface Document {
   file?: File;
 }
 
+interface UploadedFileMeta {
+  url: string;
+  originalName?: string;
+  size?: number;
+  uploadedAt?: string;
+}
+
 export function FundingPortalFounder() {
   const [currentStep, setCurrentStep] = useState(2); // Changed to 2 to show Pitch Deck Upload step
   const [isRecording, setIsRecording] = useState(false);
@@ -44,14 +51,25 @@ export function FundingPortalFounder() {
   const [hasRecording, setHasRecording] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('basic');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [pitchDeckUploaded, setPitchDeckUploaded] = useState(true); // Track if pitch deck is uploaded
+  const [pitchDeckUploaded, setPitchDeckUploaded] = useState(false); // Track if pitch deck is uploaded
   const [showAIAnalysis, setShowAIAnalysis] = useState(false); // Track if AI analysis should show
   const [showSubmitPopup, setShowSubmitPopup] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+  const [pitchDeck, setPitchDeck] = useState<UploadedFileMeta | null>(null);
+  const [pitchVideo, setPitchVideo] = useState<UploadedFileMeta | null>(null);
+  const [businessDocuments, setBusinessDocuments] = useState<(UploadedFileMeta & { docType?: string })[]>([]);
+  const [startupName, setStartupName] = useState('');
+  const [pitchSummary, setPitchSummary] = useState('');
+  const [fundingAmount, setFundingAmount] = useState('');
+  const [equityOffered, setEquityOffered] = useState('');
+  const [demoVideoLink, setDemoVideoLink] = useState('');
+  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pitchDeckInputRef = useRef<HTMLInputElement>(null);
+  const pitchVideoInputRef = useRef<HTMLInputElement>(null);
 
   const steps: Step[] = [
     { id: 1, title: 'Profile Complete', status: currentStep > 1 ? 'completed' : currentStep === 1 ? 'active' : 'pending' },
@@ -62,12 +80,42 @@ export function FundingPortalFounder() {
   ];
 
   const [documents, setDocuments] = useState<Document[]>([
-    { name: 'Business Plan', required: true, uploaded: true },
+    { name: 'Business Plan', required: true, uploaded: false },
     { name: 'Financial Projections', required: true, uploaded: false },
     { name: 'Cap Table', required: true, uploaded: false },
     { name: 'Market Research', required: false, uploaded: false },
     { name: 'Product Demo', required: false, uploaded: false },
   ]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/funding/my-submission');
+        const draft = res.data;
+        if (!draft) return;
+
+        setPitchDeck(draft.pitchDeck || null);
+        setPitchDeckUploaded(!!draft.pitchDeck?.url || !!draft.pitchDeckUrl);
+        setPitchVideo(draft.pitchVideo || null);
+        setHasRecording(!!draft.pitchVideo?.url || !!draft.demoVideoUrl);
+        setBusinessDocuments(draft.businessDocuments || []);
+
+        if (draft.title) setStartupName(draft.title);
+        if (draft.pitchSummary) setPitchSummary(draft.pitchSummary);
+        if (draft.fundingAsk) setFundingAmount(String(draft.fundingAsk));
+        if (draft.equityOffered) setEquityOffered(String(draft.equityOffered));
+        if (draft.demoVideoUrl) setDemoVideoLink(draft.demoVideoUrl);
+        if (Array.isArray(draft.tags)) setSelectedIndustries(draft.tags);
+
+        setDocuments(prev => {
+          if (!(draft.businessDocuments || []).length) return prev;
+          return prev.map((doc) => ({ ...doc, uploaded: true }));
+        });
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   const completedSteps = steps.filter(s => s.status === 'completed').length;
   const progressPercentage = Math.round((completedSteps / steps.length) * 100);
@@ -94,16 +142,62 @@ export function FundingPortalFounder() {
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files && files.length > 0) {
-      // Simulate file upload
-      const file = files[0];
-      setDocuments(prev => prev.map((doc, idx) => 
-        idx === prev.findIndex(d => !d.uploaded) 
-          ? { ...doc, uploaded: true, file } 
-          : doc
-      ));
+    if (!files || files.length === 0) return;
+
+    try {
+      const form = new FormData();
+      Array.from(files).forEach((f) => form.append('documents', f));
+      const res = await api.post('/funding/business-documents', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setBusinessDocuments(res.data?.businessDocuments || []);
+      setDocuments(prev => prev.map((doc) => ({ ...doc, uploaded: true })));
+    } catch (err: any) {
+      setSubmitError(err.response?.data?.message || 'Failed to upload documents');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handlePitchDeckUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const form = new FormData();
+      form.append('pitchDeck', file);
+      const res = await api.post('/funding/pitch-deck', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const meta = res.data?.pitchDeck || null;
+      setPitchDeck(meta);
+      setPitchDeckUploaded(true);
+      setShowAIAnalysis(false);
+      setTimeout(() => setShowAIAnalysis(true), 2000);
+    } catch (err: any) {
+      setSubmitError(err.response?.data?.message || 'Failed to upload pitch deck');
+    } finally {
+      if (pitchDeckInputRef.current) pitchDeckInputRef.current.value = '';
+    }
+  };
+
+  const handlePitchVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const form = new FormData();
+      form.append('pitchVideo', file);
+      const res = await api.post('/funding/pitch-video', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const meta = res.data?.pitchVideo || null;
+      setPitchVideo(meta);
+      setHasRecording(true);
+    } catch (err: any) {
+      setSubmitError(err.response?.data?.message || 'Failed to upload pitch video');
+    } finally {
+      if (pitchVideoInputRef.current) pitchVideoInputRef.current.value = '';
     }
   };
 
@@ -273,11 +367,7 @@ export function FundingPortalFounder() {
                     <div className="bg-white rounded-2xl p-6 lg:p-8">
                       {!pitchDeckUploaded ? (
                         <div
-                          onClick={() => {
-                            setPitchDeckUploaded(true);
-                            // Simulate AI analysis after 2 seconds
-                            setTimeout(() => setShowAIAnalysis(true), 2000);
-                          }}
+                          onClick={() => pitchDeckInputRef.current?.click()}
                           className="border-2 border-dashed rounded-xl p-12 text-center cursor-pointer hover:bg-gray-50 transition-colors"
                           style={{ borderColor: brandColors.electricBlue }}
                         >
@@ -287,6 +377,13 @@ export function FundingPortalFounder() {
                           <p className="text-xs text-gray-500">
                             Accepted formats: PDF, PPT, PPTX (max 50MB)
                           </p>
+                          <input
+                            ref={pitchDeckInputRef}
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.ppt,.pptx"
+                            onChange={handlePitchDeckUpload}
+                          />
                         </div>
                       ) : (
                         <div className="space-y-4">
@@ -294,8 +391,8 @@ export function FundingPortalFounder() {
                           <div className="flex items-center gap-3 p-4 bg-green-50 border-2 border-green-500 rounded-xl">
                             <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <h4 className="font-bold text-sm text-gray-900 truncate">TechFlow_Pitch_Deck_2024.pdf</h4>
-                              <p className="text-xs text-gray-600">12 slides • 4.2 MB • Uploaded 2 mins ago</p>
+                              <h4 className="font-bold text-sm text-gray-900 truncate">{pitchDeck?.originalName || 'Pitch Deck'}</h4>
+                              <p className="text-xs text-gray-600">{pitchDeck?.size ? `${(pitchDeck.size / (1024 * 1024)).toFixed(1)} MB` : ''}</p>
                             </div>
                             <button className="p-2 hover:bg-green-100 rounded-lg transition-colors flex-shrink-0">
                               <X className="w-4 h-4 text-green-700" />
@@ -486,6 +583,38 @@ export function FundingPortalFounder() {
                   <p className="text-gray-600">
                     A 2-minute video pitch helps investors connect with you and your vision.
                   </p>
+                </div>
+
+                <div className="bg-white rounded-2xl p-6 lg:p-8">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-sm text-gray-900">Upload pitch video</h3>
+                      <p className="text-xs text-gray-600">Accepted formats: MP4, WEBM, MOV (max 200MB)</p>
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => pitchVideoInputRef.current?.click()}
+                        className="px-4 py-2 rounded-lg font-bold text-white"
+                        style={{ background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})` }}
+                      >
+                        Upload Video
+                      </button>
+                      <input
+                        ref={pitchVideoInputRef}
+                        type="file"
+                        className="hidden"
+                        accept="video/mp4,video/webm,video/quicktime"
+                        onChange={handlePitchVideoUpload}
+                      />
+                    </div>
+                  </div>
+
+                  {pitchVideo?.url && (
+                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+                      <p className="text-sm text-green-800 font-medium">Uploaded: {pitchVideo.originalName || 'Pitch Video'}</p>
+                      <a className="text-xs text-green-700 underline" href={pitchVideo.url} target="_blank" rel="noreferrer">View</a>
+                    </div>
+                  )}
                 </div>
 
                 {/* Video Recording Area */}
@@ -723,15 +852,15 @@ export function FundingPortalFounder() {
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>Pitch Deck (12 slides)</span>
+                        <span>Pitch Deck</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>Pitch Video (1:45)</span>
+                        <span>Pitch Video</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>3 Documents</span>
+                        <span>{businessDocuments.length} Documents</span>
                       </div>
                     </div>
                   </div>
@@ -1069,15 +1198,16 @@ export function FundingPortalFounder() {
                       setSubmitError('');
                       setSubmitting(true);
                       try {
-                        await api.post('/funding/applications', {
+                        await api.put('/funding/my-submission', {
                           title: startupName || 'Funding Application',
-                          pitchSummary: pitchSummary,
+                          pitchSummary,
                           fundingAsk: fundingAmount ? Number(fundingAmount) : undefined,
-                          currency: 'USD',
-                          equityOffered: equityPercentage ? Number(equityPercentage) : undefined,
-                          pitchDeckUrl: pitchDeckLink,
-                          demoVideoUrl: demoVideoLink,
+                          currency: 'INR',
+                          equityOffered: equityOffered ? Number(equityOffered) : undefined,
                           tags: selectedIndustries,
+                        });
+                        await api.post('/funding/my-submission/submit', {
+                          title: startupName || 'Funding Application',
                         });
                         setIsSubmitted(true);
                       } catch (err: any) {

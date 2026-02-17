@@ -266,6 +266,19 @@ export function PodcastsPage({ userRole = 'founder' }: PodcastsPageProps) {
     }
   }, [isPlaying, currentlyPlaying, playbackSpeed]);
 
+  // Guard: don't render hero until data is loaded
+  if (featuredEpisodes.length === 0) {
+    return (
+      <div className="flex h-screen bg-gray-50 overflow-hidden pb-24">
+        <main className="flex-1 overflow-y-auto flex items-center justify-center">
+          <div className="text-gray-600">Loading podcasts...</div>
+        </main>
+      </div>
+    );
+  }
+
+  const heroEpisode = featuredEpisodes[heroIndex];
+
   if (selectedEpisode) {
     return <EpisodeDetailPage episode={selectedEpisode} onBack={() => setSelectedEpisode(null)} />;
   }
@@ -301,16 +314,16 @@ export function PodcastsPage({ userRole = 'founder' }: PodcastsPageProps) {
                   <div className="flex items-center gap-2 mb-4">
                     <span
                       className="px-3 py-1 rounded-full text-white text-xs font-bold uppercase flex items-center gap-1"
-                      style={{ backgroundColor: getTierColor(featuredEpisodes[heroIndex].tier) }}
+                      style={{ backgroundColor: getTierColor(heroEpisode?.tier) }}
                     >
-                      {getTierIcon(featuredEpisodes[heroIndex].tier)}
-                      {featuredEpisodes[heroIndex].tier}
+                      {getTierIcon(heroEpisode?.tier)}
+                      {heroEpisode?.tier}
                     </span>
-                    <span className="text-white/80 text-sm">Episode {featuredEpisodes[heroIndex].episodeNumber}</span>
+                    <span className="text-white/80 text-sm">Episode {heroEpisode?.episodeNumber}</span>
                   </div>
 
                   <h1 className="text-4xl lg:text-5xl font-bold text-white mb-[96px] mt-[0px] mr-[0px] ml-[0px]">
-                    {featuredEpisodes[heroIndex].title}
+                    {heroEpisode?.title}
                   </h1>
 
                   <div className="flex items-center gap-4 mb-[24px] text-white/80 mt-[0px] mr-[0px] ml-[0px]">
@@ -319,18 +332,18 @@ export function PodcastsPage({ userRole = 'founder' }: PodcastsPageProps) {
                         className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
                         style={{ backgroundColor: brandColors.atomicOrange }}
                       >
-                        {featuredEpisodes[heroIndex].host.avatar}
+                        {heroEpisode?.host?.avatar}
                       </div>
-                      <span>{featuredEpisodes[heroIndex].host.name}</span>
+                      <span>{heroEpisode?.host?.name}</span>
                     </div>
                     <span>•</span>
-                    <span>{featuredEpisodes[heroIndex].duration}</span>
+                    <span>{heroEpisode?.duration}</span>
                     <span>•</span>
-                    <span>{featuredEpisodes[heroIndex].publishDate}</span>
+                    <span>{heroEpisode?.publishDate}</span>
                   </div>
 
                   <button
-                    onClick={() => handlePlayPause(featuredEpisodes[heroIndex])}
+                    onClick={() => handlePlayPause(heroEpisode!)}
                     className="flex items-center gap-3 px-8 py-4 rounded-xl font-bold text-white text-lg hover:shadow-lg transition-all group"
                     style={{ backgroundColor: brandColors.atomicOrange }}
                   >

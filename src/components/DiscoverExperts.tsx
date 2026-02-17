@@ -43,13 +43,19 @@ interface Expert {
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 
-export function DiscoverExperts() {
+interface DiscoverExpertsProps {
+  onMessage?: (userId: string) => void;
+}
+
+export function DiscoverExperts({ onMessage }: DiscoverExpertsProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState('rating');
   const [selectedProfile, setSelectedProfile] = useState<any>(null);
   const [experts, setExperts] = useState<Expert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [selectedExpert, setSelectedExpert] = useState<any>(null);
 
   useEffect(() => {
     const fetchExperts = async () => {
@@ -361,6 +367,10 @@ export function DiscoverExperts() {
                           {/* Action Buttons */}
                           <div className="flex flex-col sm:flex-row gap-3">
                             <button
+                              onClick={() => {
+                                setSelectedExpert(expert);
+                                setShowBookingModal(true);
+                              }}
                               className="flex-1 px-6 py-3 bg-gradient-to-r text-white rounded-lg font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                               style={{
                                 background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})`
@@ -369,7 +379,10 @@ export function DiscoverExperts() {
                               <Calendar className="w-5 h-5" />
                               Book Session
                             </button>
-                            <button className="px-6 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                            <button 
+                              onClick={() => onMessage?.(String(expert.id))}
+                              className="px-6 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                            >
                               <MessageCircle className="w-5 h-5" />
                               Message
                             </button>
@@ -558,6 +571,222 @@ export function DiscoverExperts() {
           onClose={() => setSelectedProfile(null)}
         />
       )}
+
+      {/* Booking Modal */}
+      {showBookingModal && selectedExpert && (
+        <BookingModal
+          expert={selectedExpert}
+          onClose={() => {
+            setShowBookingModal(false);
+            setSelectedExpert(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+interface BookingModalProps {
+  expert: any;
+  onClose: () => void;
+}
+
+function BookingModal({ expert, onClose }: BookingModalProps) {
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedTime, setSelectedTime] = useState('');
+  const [duration, setDuration] = useState(60);
+  const [topic, setTopic] = useState('');
+  const [notes, setNotes] = useState('');
+  const [isBooking, setIsBooking] = useState(false);
+  const [bookingError, setBookingError] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (selectedDate && selectedTime) {
+      // Check if slot is available
+      // This would be expanded with real availability checking
+    }
+  }, [selectedDate, selectedTime]);
+
+  const handleBooking = async () => {
+    if (!selectedDate || !selectedTime || !topic) {
+      setBookingError('Please fill in all required fields');
+      return;
+    }
+
+    setIsBooking(true);
+    setBookingError('');
+
+    try {
+      const response = await api.post('/booking', {
+        expert: expert.id,
+        date: selectedDate,
+        startTime: selectedTime,
+        duration,
+        topic,
+        notes,
+      });
+
+      // Success - close modal and show success message
+      onClose();
+      alert('Session booked successfully! Check your email for confirmation details.');
+    } catch (error: any) {
+      setBookingError(error.response?.data?.message || 'Failed to book session');
+    } finally {
+      setIsBooking(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900">Book Session with {expert.name}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Expert Info */}
+          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
+              {expert.avatar}
+            </div>
+            <div>
+              <h3 className="font-bold text-lg">{expert.name}</h3>
+              <p className="text-gray-600">{expert.title}</p>
+              <p className="text-sm text-gray-500">{expert.hourlyRate} per hour</p>
+            </div>
+          </div>
+
+          {/* Date Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Date
+            </label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Time Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Time
+            </label>
+            <select
+              value={selectedTime}
+              onChange={(e) => setSelectedTime(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select a time</option>
+              {[
+                '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+                '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+                '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
+              ].map(time => (
+                <option key={time} value={time}>{time}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Duration */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Duration (minutes)
+            </label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={30}>30 minutes</option>
+              <option value={60}>1 hour</option>
+              <option value={90}>1.5 hours</option>
+              <option value={120}>2 hours</option>
+            </select>
+          </div>
+
+          {/* Topic */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Session Topic *
+            </label>
+            <input
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="e.g., Product Strategy, Fundraising, Team Building"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Additional Notes
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Tell the expert what you'd like to discuss..."
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Error Message */}
+          {bookingError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {bookingError}
+            </div>
+          )}
+
+          {/* Booking Summary */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-bold text-sm mb-2">Booking Summary</h4>
+            <div className="text-sm space-y-1">
+              <div className="flex justify-between">
+                <span>Duration:</span>
+                <span>{duration} minutes</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Rate:</span>
+                <span>{expert.hourlyRate}</span>
+              </div>
+              <div className="flex justify-between font-bold">
+                <span>Total:</span>
+                <span>₹{((duration / 60) * 500).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBooking}
+              disabled={isBooking || !selectedDate || !selectedTime || !topic}
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-orange-500 text-white rounded-lg font-bold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isBooking ? 'Booking...' : 'Book Session'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

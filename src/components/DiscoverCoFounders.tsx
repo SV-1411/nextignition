@@ -66,7 +66,11 @@ interface ApiCofounderProfile {
   startupStatus?: 'has-startup' | 'wants-to-join' | 'ideal';
 }
 
-export function DiscoverCoFounders() {
+interface DiscoverCoFoundersProps {
+  onMessage?: (userId: string) => void;
+}
+
+export function DiscoverCoFounders({ onMessage }: DiscoverCoFoundersProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState('match');
@@ -470,13 +474,14 @@ export function DiscoverCoFounders() {
                         {/* Action Buttons */}
                         <div className="flex flex-col sm:flex-row gap-3">
                           <button
+                            onClick={() => onMessage?.(cofounder.id)}
                             className="flex-1 px-6 py-3 bg-gradient-to-r text-white rounded-lg font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                             style={{
                               background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})`
                             }}
                           >
                             <MessageCircle className="w-5 h-5" />
-                            Connect Now
+                            Message
                           </button>
                           <button className="px-6 py-3 border-2 border-pink-500 text-pink-600 rounded-lg font-bold hover:bg-pink-50 transition-colors flex items-center justify-center gap-2">
                             <Heart className="w-5 h-5" />
@@ -775,13 +780,17 @@ export function DiscoverCoFounders() {
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
                 <button
+                  onClick={() => {
+                    onMessage?.(selectedCofounder.id);
+                    setSelectedCofounder(null);
+                  }}
                   className="flex-1 px-6 py-4 bg-gradient-to-r text-white rounded-xl font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-lg"
                   style={{
                     background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})`
                   }}
                 >
                   <MessageCircle className="w-6 h-6" />
-                  Send Connection Request
+                  Message
                 </button>
                 {selectedCofounder.linkedinUrl && (
                   <button

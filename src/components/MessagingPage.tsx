@@ -87,8 +87,9 @@ interface Conversation {
 }
 
 interface MessagingPageProps {
-  userRole: UserRole;
+  userRole?: UserRole;
   userId?: number;
+  initialUserId?: string;
 }
 
 type ApiUser = {
@@ -124,11 +125,12 @@ type ApiMessage = {
 };
 
 export function MessagingPage({
-  userRole,
-  userId
+  userRole = 'founder',
+  userId,
+  initialUserId
 }: MessagingPageProps) {
   const currentUser = getCurrentUser();
-  const currentUserId: string | null = currentUser?._id || currentUser?.id || null;
+  const currentUserId: string | null = initialUserId || currentUser?._id || currentUser?.id || null;
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);

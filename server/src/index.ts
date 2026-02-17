@@ -20,6 +20,8 @@ import fundingRoutes from './routes/fundingRoutes';
 import cofounderRoutes from './routes/cofounderRoutes';
 import newsRoutes from './routes/newsRoutes';
 import podcastRoutes from './routes/podcastRoutes';
+import availabilityRoutes from './routes/availabilityRoutes';
+import messagingRoutes from './routes/messagingRoutes';
 
 dotenv.config();
 
@@ -113,6 +115,8 @@ app.use('/api/funding', fundingRoutes);
 app.use('/api/cofounders', cofounderRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/podcasts', podcastRoutes);
+app.use('/api/availability', availabilityRoutes);
+app.use('/api/messaging', messagingRoutes);
 
 // Health check route (important for Render deployment)
 app.get('/', (req, res) => {

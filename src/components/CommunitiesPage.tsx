@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import api from '../services/api';
 import { getCurrentUser } from '../services/authService';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import {
   Hash,
   Volume2,
@@ -52,7 +54,7 @@ import { brandColors } from '../utils/colors';
 
 interface CommunitiesPageProps {
   userRole: 'founder' | 'expert' | 'investor';
-  userId: number;
+  userId: string | number;
 }
 
 interface ApiCommunity {
@@ -84,7 +86,14 @@ interface ApiMessage {
     avatar?: string;
   };
   content: string;
-  type?: 'text' | 'system' | 'milestone' | 'poll';
+  type?: 'text' | 'system' | 'milestone' | 'poll' | 'shared-post';
+  attachments?: {
+    url: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+  }[];
+  sharedPostId?: any;
   reactions?: { emoji: string; count: number; users: string[] }[];
   threadCount?: number;
   pinned?: boolean;
@@ -109,7 +118,11 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [mobileView, setMobileView] = useState<'communities' | 'channels' | 'chat'>('communities');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isCreateCommunityOpen, setIsCreateCommunityOpen] = useState(false);
+  const [newCommunityName, setNewCommunityName] = useState('');
+  const [newCommunityDescription, setNewCommunityDescription] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['text-channels']);
+  const [uploading, setUploading] = useState(false);
   
   // Data states
   const [communities, setCommunities] = useState<ApiCommunity[]>([]);
@@ -148,6 +161,25 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       setError('');
     } catch (err: any) {
       setError('Failed to load communities');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateCommunity = async () => {
+    if (!newCommunityName.trim()) return;
+    try {
+      setLoading(true);
+      await api.post('/communities', {
+        name: newCommunityName.trim(),
+        description: newCommunityDescription.trim(),
+      });
+      setIsCreateCommunityOpen(false);
+      setNewCommunityName('');
+      setNewCommunityDescription('');
+      await fetchCommunities();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to create community');
     } finally {
       setLoading(false);
     }
@@ -208,7 +240,7 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       case 'founder':
         return <Rocket className="w-3 h-3 text-blue-500" />;
       case 'expert':
-        return <Award className="w-3 h-3 text-purple-500" />;
+        return <Handshake className="w-3 h-3 text-purple-500" />;
       case 'investor':
         return <Briefcase className="w-3 h-3 text-green-500" />;
       default:
@@ -229,6 +261,118 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
   const offlineMemberCount = 0;
 
   const currentChannels: ApiChannel[] = selectedCommunity ? channels : [];
+
+  const handleUploadAttachments = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !selectedChannel) return;
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      Array.from(files).forEach((f) => form.append('files', f));
+
+      await api.post(`/communities/channels/${selectedChannel._id}/attachments`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      await fetchMessages(selectedChannel._id);
+      setError('');
+    } catch (err) {
+      setError('Failed to upload attachments');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const getPostSnapshotElementId = (messageId: string) => `shared-post-${messageId}`;
+
+  const downloadSharedPostPng = async (messageId: string) => {
+    const el = document.getElementById(getPostSnapshotElementId(messageId));
+    if (!el) return;
+
+    const canvas = await html2canvas(el as HTMLElement, { backgroundColor: '#ffffff', scale: 2 });
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `shared-post-${messageId}.png`;
+    link.click();
+  };
+
+  const downloadSharedPostPdf = async (messageId: string) => {
+    const el = document.getElementById(getPostSnapshotElementId(messageId));
+    if (!el) return;
+
+    const canvas = await html2canvas(el as HTMLElement, { backgroundColor: '#ffffff', scale: 2 });
+    const imgData = canvas.toDataURL('image/png');
+
+    const pdf = new jsPDF({
+      orientation: canvas.width >= canvas.height ? 'l' : 'p',
+      unit: 'pt',
+      format: [canvas.width, canvas.height],
+    });
+    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+    pdf.save(`shared-post-${messageId}.pdf`);
+  };
+
+  const CreateCommunityModal = () => {
+    if (!isCreateCommunityOpen) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setIsCreateCommunityOpen(false)}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="text-lg font-bold">Create Community</h2>
+            <button onClick={() => setIsCreateCommunityOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <input
+                value={newCommunityName}
+                onChange={(e) => setNewCommunityName(e.target.value)}
+                className="w-full p-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="e.g. Growth Mentors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea
+                value={newCommunityDescription}
+                onChange={(e) => setNewCommunityDescription(e.target.value)}
+                className="w-full p-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="What is this community about?"
+                rows={4}
+              />
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
+            )}
+          </div>
+
+          <div className="p-5 border-t border-gray-200 flex gap-3">
+            <button
+              onClick={() => setIsCreateCommunityOpen(false)}
+              className="flex-1 px-4 py-3 rounded-xl border border-gray-300 font-medium hover:bg-gray-50"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreateCommunity}
+              className="flex-1 px-4 py-3 rounded-xl text-white font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+              disabled={loading || !newCommunityName.trim()}
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Mobile Communities List View
   const MobileCommunitiesList = () => (
@@ -360,6 +504,17 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       <div className="fixed bottom-16 left-0 right-0 border-t border-gray-200 bg-white lg:relative lg:bottom-auto z-30 pt-[12px] pr-[12px] pb-[28px] pl-[12px] mx-[0px] my-[12px]">
         <div className="flex items-end gap-2">
           <div className="flex-1 relative">
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              id="mobile-community-attach"
+              onChange={(e) => {
+                handleUploadAttachments(e.target.files);
+                e.currentTarget.value = '';
+              }}
+              disabled={uploading}
+            />
             <textarea
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
@@ -377,7 +532,12 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
               <button className="p-1.5 hover:bg-gray-200 rounded">
                 <Smile className="w-5 h-5 text-gray-500" />
               </button>
-              <button className="p-1.5 hover:bg-gray-200 rounded">
+              <button
+                className="p-1.5 hover:bg-gray-200 rounded"
+                onClick={() => document.getElementById('mobile-community-attach')?.click()}
+                disabled={uploading}
+                title={uploading ? 'Uploading...' : 'Attach'}
+              >
                 <Paperclip className="w-5 h-5 text-gray-500" />
               </button>
             </div>
@@ -404,6 +564,44 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       );
     }
 
+    if ((message as any).type === 'shared-post' && (message as any).sharedPostId) {
+      const shared = (message as any).sharedPostId;
+      return (
+        <div className="border border-gray-200 rounded-xl p-4 bg-white">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-bold text-gray-900">Shared Post</div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => downloadSharedPostPng(message._id)}
+                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-gray-300 hover:bg-gray-50"
+              >
+                Download PNG
+              </button>
+              <button
+                onClick={() => downloadSharedPostPdf(message._id)}
+                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-gray-300 hover:bg-gray-50"
+              >
+                Download PDF
+              </button>
+            </div>
+          </div>
+
+          <div id={getPostSnapshotElementId(message._id)} className="rounded-lg border border-gray-200 p-4 bg-gray-50">
+            <div className="text-sm font-bold text-gray-900 mb-1">{shared?.author?.name || 'Unknown'}</div>
+            <div className="text-xs text-gray-600 mb-3">{shared?.author?.role || ''}</div>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap">{shared?.content || ''}</div>
+            {shared?.image && (
+              <img src={shared.image} alt="Shared" className="mt-3 rounded-lg max-h-64 object-cover" />
+            )}
+          </div>
+
+          {message.content ? (
+            <div className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">{message.content}</div>
+          ) : null}
+        </div>
+      );
+    }
+
     if (message.type === 'milestone') {
       return (
         <motion.div
@@ -414,31 +612,15 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
           <div className="flex items-start gap-3">
             <div className="text-3xl">{message.userId?.avatar || '👤'}</div>
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <Trophy className="w-5 h-5 text-yellow-600" />
-                <span className="font-bold">{message.userId?.name || 'Unknown'}</span>
-                <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
-              </div>
-              <div className="prose prose-sm max-w-none">
-                <p className="font-medium text-lg mb-1">{message.milestoneData?.title}</p>
-                <p className="text-gray-700">{message.content}</p>
-              </div>
-              {message.reactions && (
-                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                  {message.reactions.map((reaction, idx) => (
-                    <button
-                      key={idx}
-                      className="flex items-center gap-1 px-2 py-1 bg-white border border-yellow-300 rounded-full hover:bg-yellow-50 transition-colors"
-                    >
-                      <span>{reaction.emoji}</span>
-                      <span className="text-xs font-medium">{reaction.count}</span>
-                    </button>
-                  ))}
-                  <button className="p-1 hover:bg-white rounded-full transition-colors">
-                    <Plus className="w-4 h-4 text-gray-400" />
-                  </button>
-                </div>
-              )}
+            <div className="flex items-center gap-2 mb-2">
+              <Trophy className="w-5 h-5 text-yellow-600" />
+              <span className="font-bold">{message.userId?.name || 'Unknown'}</span>
+              <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
+            </div>
+            <div className="prose prose-sm max-w-none">
+              <p className="font-medium text-lg mb-1">{message.milestoneData?.title}</p>
+              <p className="text-gray-700">{message.milestoneData?.description}</p>
+            </div>
             </div>
           </div>
         </motion.div>
@@ -454,92 +636,102 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-bold text-sm">{message.userId?.name || 'Unknown'}</span>
                 <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
+                {message.pinned && <Pin className="w-3 h-3 text-yellow-600" />}
               </div>
-              <p className="text-sm text-gray-600">{message.userId?.role || ''}</p>
-            </div>
-          </div>
-          <p className="mb-3 font-medium">{message.content}</p>
-          <div className="space-y-2">
-            {message.pollOptions?.map((option, idx) => {
-              const totalVotes = message.pollOptions?.reduce((sum, opt) => sum + opt.votes, 0) || 0;
-              const percentage = totalVotes > 0 ? (option.votes / totalVotes) * 100 : 0;
-              return (
-                <button
-                  key={idx}
-                  className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-blue-400 transition-all relative overflow-hidden"
-                >
-                  <div
-                    className="absolute inset-0 bg-blue-50 transition-all"
-                    style={{ width: `${percentage}%` }}
-                  />
-                  <div className="relative flex items-center justify-between">
-                    <span className="text-sm font-medium">{option.text}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">{option.votes}</span>
-                      <span className="text-xs text-gray-500">{percentage.toFixed(0)}%</span>
-                    </div>
-                  </div>
+              <p className="text-xs text-gray-600 mb-2">{message.userId?.role || ''}</p>
+              <p className="text-sm text-gray-900 break-words">{message.content}</p>
+
+              {!!message.attachments?.length && (
+                <div className="mt-2 flex flex-col gap-2">
+                  {message.attachments.map((a, idx) => (
+                    <a
+                      key={idx}
+                      href={a.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-between gap-3 px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      <span className="text-xs font-bold text-gray-800 truncate">{a.originalName}</span>
+                      <span className="text-xs text-gray-600">Download</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {message.reactions && (
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  {message.reactions.map((reaction, idx) => (
+                    <button
+                      key={idx}
+                      className="flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                    >
+                      <span className="text-sm">{reaction.emoji}</span>
+                      <span className="text-xs font-medium text-gray-700">{reaction.count}</span>
+                    </button>
+                  ))}
+                  <button className="p-1 hover:bg-gray-200 rounded-full transition-colors opacity-0 group-hover:opacity-100">
+                    <Plus className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+              )}
+
+              {message.threadCount && (
+                <button className="flex items-center gap-2 mt-2 text-xs text-blue-600 hover:underline">
+                  <MessageSquare className="w-3 h-3" />
+                  {message.threadCount} {message.threadCount === 1 ? 'reply' : 'replies'}
                 </button>
-              );
-            })}
+              )}
+            </div>
+
+            {!isMobile && (
+              <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                <button className="p-1.5 hover:bg-gray-200 rounded" title="React">
+                  <Smile className="w-4 h-4 text-gray-600" />
+                </button>
+                <button className="p-1.5 hover:bg-gray-200 rounded" title="Reply in thread">
+                  <MessageSquare className="w-4 h-4 text-gray-600" />
+                </button>
+                <button className="p-1.5 hover:bg-gray-200 rounded" title="Bookmark">
+                  <Bookmark className="w-4 h-4 text-gray-600" />
+                </button>
+                <button className="p-1.5 hover:bg-gray-200 rounded" title="More">
+                  <MoreVertical className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       );
     }
 
     return (
-      <div className={`group hover:bg-gray-50 ${isMobile ? 'p-2' : 'px-4 py-2'} rounded transition-colors`}>
-        <div className="flex items-start gap-3">
-          <div className="text-2xl flex-shrink-0">{message.userId?.avatar || '👤'}</div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-bold text-sm">{message.userId?.name || 'Unknown'}</span>
-              <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
-              {message.pinned && <Pin className="w-3 h-3 text-yellow-600" />}
-            </div>
-            <p className="text-xs text-gray-600 mb-2">{message.userId?.role || ''}</p>
-            <p className="text-sm text-gray-900 break-words">{message.content}</p>
-            
-            {message.reactions && (
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                {message.reactions.map((reaction, idx) => (
-                  <button
-                    key={idx}
-                    className="flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
-                  >
-                    <span className="text-sm">{reaction.emoji}</span>
-                    <span className="text-xs font-medium text-gray-700">{reaction.count}</span>
-                  </button>
-                ))}
-                <button className="p-1 hover:bg-gray-200 rounded-full transition-colors opacity-0 group-hover:opacity-100">
-                  <Plus className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-            )}
-
-            {message.threadCount && (
-              <button className="flex items-center gap-2 mt-2 text-xs text-blue-600 hover:underline">
-                <MessageSquare className="w-3 h-3" />
-                {message.threadCount} {message.threadCount === 1 ? 'reply' : 'replies'}
-              </button>
-            )}
+      <div className={`group flex gap-3 ${isMobile ? '' : 'p-3 hover:bg-gray-50 rounded-lg'}`}>
+        <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-700 flex-shrink-0">
+          {(message.userId?.name || 'U').charAt(0).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-bold text-sm">{message.userId?.name || 'Unknown'}</span>
+            <span className="text-xs text-gray-500">{formatTimestamp(message.createdAt)}</span>
+            {message.pinned && <Pin className="w-3 h-3 text-yellow-600" />}
           </div>
+          <p className="text-xs text-gray-600 mb-2">{message.userId?.role || ''}</p>
+          <p className="text-sm text-gray-900 break-words whitespace-pre-wrap">{message.content}</p>
 
-          {/* Hover actions - desktop only */}
-          {!isMobile && (
-            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="React">
-                <Smile className="w-4 h-4 text-gray-600" />
-              </button>
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="Reply in thread">
-                <MessageSquare className="w-4 h-4 text-gray-600" />
-              </button>
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="Bookmark">
-                <Bookmark className="w-4 h-4 text-gray-600" />
-              </button>
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="More">
-                <MoreVertical className="w-4 h-4 text-gray-600" />
-              </button>
+          {!!message.attachments?.length && (
+            <div className="mt-2 flex flex-col gap-2">
+              {message.attachments.map((a, idx) => (
+                <a
+                  key={idx}
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-between gap-3 px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  <span className="text-xs font-bold text-gray-800 truncate">{a.originalName}</span>
+                  <span className="text-xs text-gray-600">Download</span>
+                </a>
+              ))}
             </div>
           )}
         </div>

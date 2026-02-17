@@ -20,7 +20,7 @@ import { brandColors } from '../utils/colors';
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import api from '../services/api';
-import { fetchMe, getCurrentUser, setCurrentUser as persistCurrentUser } from '../services/authService';
+import { fetchMe, getCurrentUser, setCurrentUser as persistCurrentUser, logout } from '../services/authService';
 import {
   Home,
   Rocket,
@@ -48,7 +48,8 @@ import {
   BarChart3,
   TrendingUp,
   Search,
-  Edit
+  Edit,
+  LogOut
 } from 'lucide-react';
 import logoImage from 'figma:asset/faed1dd832314fe381fd34c35312b9faa571832d.png';
 import squareLogo from 'figma:asset/c1daa721302db62b744322e73e636f7b8f029976.png';
@@ -78,9 +79,11 @@ export function FounderDashboard() {
   const [showVerificationBanner, setShowVerificationBanner] = useState(true);
   const [isVerified, setIsVerified] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const userId = currentUser?.id ?? currentUser?._id;
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [upcomingEvents, setUpcomingEvents] = useState(0);
+  const [initialMessageUserId, setInitialMessageUserId] = useState<string | undefined>(undefined);
   const [dashboardStats, setDashboardStats] = useState({
     profileViews: 0,
     connections: 0,
@@ -163,6 +166,11 @@ export function FounderDashboard() {
     } catch {
       // Silent fail - keep showing 0
     }
+  };
+
+  const handleLogout = () => {
+    logout();
+    window.location.href = '/';
   };
 
   const handleRoleChange = (newRole: UserRole) => {
@@ -430,6 +438,13 @@ export function FounderDashboard() {
                   <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                 )}
               </button>
+              <button 
+                onClick={handleLogout}
+                className="p-2 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-full transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-6 h-6" />
+              </button>
               <button className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-blue-600 flex items-center justify-center text-white font-bold">
                 {currentUser?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'JD'}
               </button>
@@ -578,19 +593,19 @@ export function FounderDashboard() {
               </div>
 
               {/* Sub-tab Content */}
-              {discoverSubTab === 'Experts' && <DiscoverExperts />}
-              {discoverSubTab === 'CoFounders' && <DiscoverCoFounders />}
+              {discoverSubTab === 'Experts' && <DiscoverExperts onMessage={(userId) => { setInitialMessageUserId(userId); setActiveTab('Messages'); }} />}
+              {discoverSubTab === 'CoFounders' && <DiscoverCoFounders onMessage={(userId) => { setInitialMessageUserId(userId); setActiveTab('Messages'); }} />}
             </div>
           )}
 
           {/* Messages Tab */}
           {activeTab === 'Messages' && (
-            <MessagingPage userRole="founder" />
+            <MessagingPage initialUserId={initialMessageUserId} />
           )}
 
           {/* Communities Tab */}
           {activeTab === 'Communities' && (
-            <CommunitiesPage userRole="founder" userId={userId} />
+            userId ? <CommunitiesPage userRole="founder" userId={userId} /> : null
           )}
 
           {/* Funding Portal Tab */}

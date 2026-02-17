@@ -5,6 +5,13 @@ export interface ICommunityMessage extends Document {
   userId: mongoose.Types.ObjectId;
   content: string;
   type: 'text' | 'system' | 'milestone' | 'poll' | 'shared-post';
+  attachments?: {
+    url: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+  }[];
+  sharedPostId?: mongoose.Types.ObjectId;
   reactions: { emoji: string; count: number; users: mongoose.Types.ObjectId[] }[];
   threadCount: number;
   pinned: boolean;
@@ -19,6 +26,13 @@ const communityMessageSchema: Schema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   content: { type: String, required: true },
   type: { type: String, enum: ['text', 'system', 'milestone', 'poll', 'shared-post'], default: 'text' },
+  attachments: [{
+    url: { type: String, required: true },
+    originalName: { type: String, required: true },
+    mimeType: { type: String, required: true },
+    size: { type: Number, required: true },
+  }],
+  sharedPostId: { type: Schema.Types.ObjectId, ref: 'Post' },
   reactions: [{
     emoji: { type: String, required: true },
     count: { type: Number, default: 0 },

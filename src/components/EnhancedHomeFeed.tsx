@@ -142,7 +142,7 @@ export function EnhancedHomeFeed({ userType = 'founder', openCreateModal, onCrea
   const [showStoryViewer, setShowStoryViewer] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
 
-  const currentUser = getCurrentUser();
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const currentUserId: string | null = currentUser?._id || null;
   const currentUserName: string = currentUser?.name || 'You';
   const currentUserInitials: string = (currentUserName || 'You')
@@ -534,8 +534,8 @@ export function EnhancedHomeFeed({ userType = 'founder', openCreateModal, onCrea
                     className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-50 min-w-[200px]"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {/* Show Edit & Delete for user's own posts (post id 1 for demo) */}
-                    {post.id === 'mock-1' && (
+                    {/* Show Edit & Delete for user's own posts */}
+                    {post.author._id === currentUserId && (
                       <>
                         <button
                           onClick={() => {
@@ -580,7 +580,7 @@ export function EnhancedHomeFeed({ userType = 'founder', openCreateModal, onCrea
                     </button>
 
                     {/* Show hide/report for other people's posts */}
-                    {post.id !== 'mock-1' && (
+                    {post.author._id !== currentUserId && (
                       <>
                         <div className="border-t border-gray-200" />
                         <button
@@ -1294,18 +1294,12 @@ export function EnhancedHomeFeed({ userType = 'founder', openCreateModal, onCrea
                     <button 
                       onClick={() => {
                         setShowAIEnhancer(true);
-                        // Mock AI enhancement
-                        setAiEnhancedVersions([
-                          "🚀 Exciting update: Just closed our seed round! Huge thanks to the NextIgnition community for the invaluable mentorship. Here's my biggest takeaway about pitching to VCs...",
-                          "Big milestone achieved! 🎉 Successfully closed our seed round. The NextIgnition community played a crucial role in our journey. Key lessons I learned about VC pitches...",
-                          "Thrilled to announce we've completed our seed round! 💰 Grateful for all the support from NextIgnition mentors. Here are the top insights I gained from pitching to investors..."
-                        ]);
+                        setAiEnhancedVersions([]);
                       }}
-                      className="flex-1 sm:flex-none px-3 py-2 bg-gradient-to-r from-[#6666FF] to-[#F78405] text-white rounded-lg transition-all hover:shadow-md flex items-center justify-center gap-2" 
-                      title="Enhance with AI"
+                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:shadow-lg transition-all duration-200 text-sm font-medium"
                     >
                       <Sparkles className="w-4 h-4" />
-                      <span className="text-sm font-medium whitespace-nowrap">Enhance with AI</span>
+                      AI Enhance
                     </button>
                     <button
                       type="button"

@@ -15,8 +15,13 @@ export function ExpertProfileSettingsTab({ userRole }: any) {
     const fetchProfile = async () => {
       const user = getCurrentUser();
       if (user) {
+        const userId = user.id || user._id;
+        if (!userId) {
+          setLoading(false);
+          return;
+        }
         try {
-          const profile = await getProfile(user.id);
+          const profile = await getProfile(userId);
           setSpecializations(profile.profile?.expertise || []);
           setExperience(profile.profile?.experience || '');
           setHourlyRate(profile.profile?.hourlyRate || 0);

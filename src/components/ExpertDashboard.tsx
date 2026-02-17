@@ -1,13 +1,13 @@
 import { brandColors } from '../utils/colors';
-import { ImageWithFallback } from './figma/ImageWithFallback';
-import { VerificationBanner } from './VerificationBanner';
 import logoImage from 'figma:asset/faed1dd832314fe381fd34c35312b9faa571832d.png';
 import squareLogo from 'figma:asset/c1daa721302db62b744322e73e636f7b8f029976.png';
+import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { RoleSwitcher, UserRole } from './RoleSwitcher';
 import { FounderDashboard } from './FounderDashboard';
 import { InvestorDashboard } from './InvestorDashboard';
-import { useState } from 'react';
-import { motion } from 'motion/react';
+import { getCurrentUser, logout } from '../services/authService';
+import api from '../services/api';
 import {
   Home,
   Users,
@@ -37,7 +37,8 @@ import {
   Target,
   XCircle,
   Eye,
-  ThumbsUp
+  ThumbsUp,
+  LogOut
 } from 'lucide-react';
 import { EnhancedHomeFeed } from './EnhancedHomeFeed';
 import { NotificationsDropdown } from './NotificationsDropdown';
@@ -97,6 +98,7 @@ export function ExpertDashboard() {
   const [currentRole, setCurrentRole] = useState<UserRole>('expert');
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [pendingClients, setPendingClients] = useState<Client[]>([
     {
       id: 1,
@@ -127,10 +129,21 @@ export function ExpertDashboard() {
     },
   ]);
 
+  const handleLogout = () => {
+    logout();
+    window.location.href = '/';
+  };
+
   const handleRoleChange = (newRole: UserRole) => {
     setCurrentRole(newRole);
     console.log(`Switching to ${newRole} dashboard`);
   };
+
+  // Load current user on mount
+  useEffect(() => {
+    const user = getCurrentUser();
+    setCurrentUser(user);
+  }, []);
 
   // If user switches to a different role, render that dashboard
   if (currentRole === 'founder') {
@@ -189,27 +202,34 @@ export function ExpertDashboard() {
     },
   ];
 
-  const contentPosts: Post[] = [
-    {
-      id: 1,
-      title: 'Top 10 Mistakes Founders Make When Fundraising',
-      status: 'draft',
-    },
-    {
-      id: 2,
-      title: 'Building a Winning Product Roadmap',
-      status: 'scheduled',
-      scheduledDate: 'Jan 25, 2026',
-      views: 0,
-    },
-    {
-      id: 3,
-      title: 'How to Validate Your Startup Idea in 30 Days',
-      status: 'published',
-      views: 2340,
-      likes: 156,
-    },
-  ];
+  const [contentPosts, setContentPosts] = useState<any[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+
+  useEffect(() => {
+    const fetchPosts = async () => {
+      setLoadingPosts(true);
+      try {
+        const response = await api.get('/feed');
+        const expertPosts = response.data.filter((post: any) => post.author?._id === currentUser?._id);
+        setContentPosts(expertPosts.map((post: any) => ({
+          id: post._id,
+          title: post.content.substring(0, 100) + (post.content.length > 100 ? '...' : ''),
+          status: 'published', // Default status for now
+          views: 0,
+          likes: post.likes?.length || 0,
+        })));
+      } catch (error) {
+        console.error('Failed to fetch posts', error);
+        setContentPosts([]);
+      } finally {
+        setLoadingPosts(false);
+      }
+    };
+
+    if (currentUser) {
+      fetchPosts();
+    }
+  }, [currentUser]);
 
   const revenueStats = {
     thisMonth: 8450,
@@ -220,68 +240,60 @@ export function ExpertDashboard() {
     totalSessions: 127,
   };
 
-  const bookingRequests = [
-    { founder: 'Alex Johnson', topic: 'Product-Market Fit Strategy', time: 'Jan 24, 3PM' },
-    { founder: 'Maria Garcia', topic: 'Fundraising Deck Review', time: 'Jan 25, 11AM' },
-    { founder: 'Chris Lee', topic: 'Go-to-Market Strategy', time: 'Jan 26, 2PM' },
-  ];
+  const [bookingRequests, setBookingRequests] = useState<any[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
 
-  const notifications = [
-    {
-      id: 1,
-      type: 'booking',
-      title: 'New Booking Request',
-      message: 'Alex Johnson wants to book a session about Product-Market Fit',
-      time: '5 min ago',
-      unread: true,
-      icon: Calendar
-    },
-    {
-      id: 2,
-      type: 'message',
-      title: 'New Message',
-      message: 'Sarah Chen sent you a message',
-      time: '15 min ago',
-      unread: true,
-      icon: MessageCircle
-    },
-    {
-      id: 3,
-      type: 'payment',
-      title: 'Payment Received',
-      message: 'You received $450 from GreenScale consultation',
-      time: '1 hour ago',
-      unread: true,
-      icon: DollarSign
-    },
-    {
-      id: 4,
-      type: 'review',
-      title: 'New Review',
-      message: 'Emily Rodriguez left you a 5-star review',
-      time: '2 hours ago',
-      unread: false,
-      icon: Star
-    },
-    {
-      id: 5,
-      type: 'reminder',
-      title: 'Session Reminder',
-      message: 'Your session with TechFlow AI starts in 30 minutes',
-      time: '3 hours ago',
-      unread: false,
-      icon: Clock
-    },
-    {
-      id: 6,
-      type: 'achievement',
-      title: 'Achievement Unlocked',
-      message: 'You\'ve reached 100 completed sessions!',
-      time: '1 day ago',
-      unread: false,
-      icon: Award
-    }
-  ];
+  useEffect(() => {
+    const fetchBookings = async () => {
+      setLoadingBookings(true);
+      try {
+        const response = await api.get('/bookings');
+        const expertBookings = response.data.filter((booking: any) => booking.status === 'pending');
+        setBookingRequests(expertBookings.map((booking: any) => ({
+          id: booking._id,
+          founder: booking.founder.name || 'Unknown Founder',
+          topic: booking.topic,
+          time: new Date(booking.date).toLocaleDateString() + ' ' + booking.startTime,
+          bookingData: booking
+        })));
+      } catch (error) {
+        console.error('Failed to fetch bookings', error);
+        setBookingRequests([]);
+      } finally {
+        setLoadingBookings(false);
+      }
+    };
+
+    fetchBookings();
+  }, []);
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      setLoadingNotifications(true);
+      try {
+        const response = await api.get('/notifications');
+        setNotifications(response.data.map((notif: any) => ({
+          id: notif._id,
+          type: notif.type || 'general',
+          title: notif.title,
+          message: notif.message,
+          time: new Date(notif.createdAt).toLocaleDateString(),
+          unread: !notif.read,
+          icon: Calendar, // Default icon, could be mapped by type
+        })));
+      } catch (error) {
+        console.error('Failed to fetch notifications', error);
+        setNotifications([]);
+      } finally {
+        setLoadingNotifications(false);
+      }
+    };
+
+    fetchNotifications();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -466,10 +478,17 @@ export function ExpertDashboard() {
                 className="relative p-2 hover:bg-gray-100 rounded-full"
               >
                 <Bell className="w-6 h-6" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-50 rounded-full"></span>
+              </button>
+              <button 
+                onClick={handleLogout}
+                className="p-2 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-full transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-6 h-6" />
               </button>
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
-                DJ
+                {currentUser?.name?.split(' ').map((n: any) => n[0]).join('').slice(0, 2).toUpperCase() || 'DJ'}
               </div>
             </div>
           </div>
@@ -497,14 +516,16 @@ export function ExpertDashboard() {
         
         {activeTab === 'Events' && <EventsPage userRole="expert" />}
         
-        {activeTab === 'Messages' && <MessagingPage userRole="expert" userId={1} />}
+        {activeTab === 'Messages' && (
+          <MessagingPage initialUserId={currentUser?.id ? String(currentUser.id) : undefined} />
+        )}
 
-        {activeTab === 'Communities' && <CommunitiesPage userRole="expert" userId={1} />}
+        {activeTab === 'Communities' && <CommunitiesPage userRole="expert" userId={currentUser?.id || 1} />}
 
         {activeTab === 'Podcasts' && <PodcastsPage userRole="expert" />}
 
         {/* News Tab */}
-        {activeTab === 'News' && <NewsFeedPage userRole="expert" userId={1} />}
+        {activeTab === 'News' && <NewsFeedPage userRole="expert" userId={currentUser?.id || 1} />}
 
         {/* Ignisha AI Tab */}
         {activeTab === 'Ignisha AI' && <IgnishaAIDashboard userRole="expert" />}
@@ -838,10 +859,28 @@ export function ExpertDashboard() {
                         {request.time}
                       </div>
                       <div className="flex gap-2">
-                        <button className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-white transition-colors">
+                        <button 
+                          onClick={async () => {
+                            try {
+                              await api.put(`/booking/${request.bookingData._id}/status`, { status: 'cancelled' });
+                              setBookingRequests(prev => prev.filter(r => r.id !== request.id));
+                            } catch (error) {
+                              console.error('Failed to decline booking', error);
+                            }
+                          }}
+                          className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-white transition-colors"
+                        >
                           Decline
                         </button>
                         <button 
+                          onClick={async () => {
+                            try {
+                              await api.put(`/booking/${request.bookingData._id}/status`, { status: 'confirmed' });
+                              setBookingRequests(prev => prev.filter(r => r.id !== request.id));
+                            } catch (error) {
+                              console.error('Failed to approve booking', error);
+                            }
+                          }}
                           className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
                           style={{ background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})` }}
                         >
