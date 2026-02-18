@@ -22,6 +22,7 @@ import newsRoutes from './routes/newsRoutes';
 import podcastRoutes from './routes/podcastRoutes';
 import availabilityRoutes from './routes/availabilityRoutes';
 import messagingRoutes from './routes/messagingRoutes';
+import followRoutes from './routes/followRoutes';
 
 dotenv.config();
 
@@ -117,6 +118,7 @@ app.use('/api/news', newsRoutes);
 app.use('/api/podcasts', podcastRoutes);
 app.use('/api/availability', availabilityRoutes);
 app.use('/api/messaging', messagingRoutes);
+app.use('/api/follow', followRoutes);
 
 // Health check route (important for Render deployment)
 app.get('/', (req, res) => {

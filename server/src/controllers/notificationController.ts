@@ -51,7 +51,8 @@ export const createNotification = async (
     title: string,
     content: string,
     link?: string,
-    senderId?: string
+    senderId?: string,
+    metadata?: Record<string, any>
 ) => {
     try {
         await Notification.create({
@@ -61,6 +62,7 @@ export const createNotification = async (
             content,
             link,
             sender: senderId,
+            metadata,
         });
     } catch (error) {
         console.error('Failed to create notification', error);

@@ -124,6 +124,20 @@ type ApiMessage = {
   createdAt: string;
 };
 
+type PeopleUser = {
+  _id: string;
+  name?: string;
+  role?: string;
+  avatar?: string;
+  isVerified?: boolean;
+};
+
+type ApiCommunity = {
+  _id: string;
+  name: string;
+  icon?: string;
+};
+
 export function MessagingPage({
   userRole = 'founder',
   userId,
@@ -143,6 +157,18 @@ export function MessagingPage({
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string>('');
+
+  const [peopleQuery, setPeopleQuery] = useState('');
+  const [recommendedUsers, setRecommendedUsers] = useState<PeopleUser[]>([]);
+  const [peopleResults, setPeopleResults] = useState<PeopleUser[]>([]);
+  const [loadingPeople, setLoadingPeople] = useState(false);
+  const [followingUserIds, setFollowingUserIds] = useState<Set<string>>(new Set());
+
+  const [myCommunities, setMyCommunities] = useState<ApiCommunity[]>([]);
+  const [inviteTargetUser, setInviteTargetUser] = useState<PeopleUser | null>(null);
+  const [inviteCommunityId, setInviteCommunityId] = useState<string>('');
+  const [inviteLoading, setInviteLoading] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -199,7 +225,7 @@ export function MessagingPage({
     setLoadingConversations(true);
     setError('');
     try {
-      const resp = await api.get<ApiConversation[]>('/messages/conversations');
+      const resp = await api.get<ApiConversation[]>('/messaging/conversations');
       const mapped = (resp.data || [])
         .map(mapApiConversationToUi)
         .filter((x): x is Conversation => Boolean(x));
@@ -213,11 +239,55 @@ export function MessagingPage({
     }
   };
 
+  const fetchMyCommunities = async () => {
+    try {
+      const resp = await api.get<ApiCommunity[]>('/communities');
+      setMyCommunities(resp.data || []);
+    } catch {
+      setMyCommunities([]);
+    }
+  };
+
+  const openInviteModal = (u: PeopleUser) => {
+    setInviteTargetUser(u);
+    setInviteCommunityId('');
+  };
+
+  const closeInviteModal = () => {
+    setInviteTargetUser(null);
+    setInviteCommunityId('');
+    setInviteLoading(false);
+  };
+
+  const sendCommunityInvite = async () => {
+    if (!inviteTargetUser?._id) return;
+    if (!inviteCommunityId) {
+      setError('Select a community first');
+      return;
+    }
+    setInviteLoading(true);
+    setError('');
+    try {
+      await api.post('/messaging/conversations/invite-community', {
+        otherUserId: inviteTargetUser._id,
+        communityId: inviteCommunityId,
+      });
+      await fetchConversations();
+      await fetchRecommended();
+      closeInviteModal();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Failed to send invite';
+      setError(msg);
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   const fetchMessages = async (conversationId: string) => {
     setLoadingMessages(true);
     setError('');
     try {
-      const resp = await api.get<ApiMessage[]>(`/messages/${conversationId}`);
+      const resp = await api.get<ApiMessage[]>(`/messaging/conversations/${conversationId}/messages`);
       setMessages((resp.data || []).map(mapApiMessageToUi));
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Failed to fetch messages';
@@ -230,7 +300,7 @@ export function MessagingPage({
 
   const markConversationRead = async (conversationId: string) => {
     try {
-      await api.put(`/messages/${conversationId}/read`);
+      await api.put(`/messaging/conversations/${conversationId}/read`);
       setConversations((prev) =>
         prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c))
       );
@@ -239,9 +309,162 @@ export function MessagingPage({
     }
   };
 
+  const fetchFollowing = async () => {
+    try {
+      const resp = await api.get<{ followingUserIds: string[] }>('/follow/following');
+      setFollowingUserIds(new Set(resp.data?.followingUserIds || []));
+    } catch (err: any) {
+      console.error('fetchFollowing error:', err.response?.data || err.message);
+      setFollowingUserIds(new Set());
+    }
+  };
+
+  const fetchRecommended = async () => {
+    setLoadingPeople(true);
+    try {
+      const resp = await api.get<PeopleUser[]>('/messaging/users/messaging');
+      setRecommendedUsers(resp.data || []);
+    } catch (err: any) {
+      console.error('fetchRecommended error:', err.response?.data || err.message);
+      setRecommendedUsers([]);
+    } finally {
+      setLoadingPeople(false);
+    }
+  };
+
+  const searchPeople = async (q: string) => {
+    setLoadingPeople(true);
+    try {
+      const resp = await api.get<PeopleUser[]>('/messaging/users/search', {
+        params: { query: q },
+      });
+      setPeopleResults(resp.data || []);
+    } catch (err: any) {
+      console.error('searchPeople error:', err.response?.data || err.message);
+      setPeopleResults([]);
+    } finally {
+      setLoadingPeople(false);
+    }
+  };
+
+  const follow = async (targetUserId: string) => {
+    try {
+      await api.post(`/follow/${targetUserId}`);
+      setFollowingUserIds((prev) => new Set(prev).add(targetUserId));
+    } catch (err: any) {
+      console.error('follow error:', err.response?.data || err.message);
+      setError(err.response?.data?.message || 'Failed to follow user');
+    }
+  };
+
+  const unfollow = async (targetUserId: string) => {
+    try {
+      await api.delete(`/follow/${targetUserId}`);
+      setFollowingUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetUserId);
+        return next;
+      });
+    } catch (err: any) {
+      console.error('unfollow error:', err.response?.data || err.message);
+      setError(err.response?.data?.message || 'Failed to unfollow user');
+    }
+  };
+
+  const startChatWithUser = async (targetUserId: string) => {
+    if (!followingUserIds.has(targetUserId)) {
+      setError('Follow this user to message them');
+      return;
+    }
+    setError('');
+    try {
+      const resp = await api.post<ApiConversation>('/messaging/conversations', {
+        otherUserId: targetUserId,
+      });
+
+      const mapped = mapApiConversationToUi(resp.data);
+      if (!mapped) return;
+
+      setConversations((prev) => {
+        const existing = prev.find((c) => c.id === mapped.id);
+        if (existing) return prev;
+        return [mapped, ...prev];
+      });
+
+      handleConversationClick(mapped);
+      // Refresh state
+      fetchConversations();
+      fetchRecommended();
+      setPeopleQuery('');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Failed to start chat';
+      setError(msg);
+    }
+  };
+
   useEffect(() => {
     fetchConversations();
   }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    fetchFollowing();
+    fetchRecommended();
+    fetchMyCommunities();
+  }, [currentUserId]);
+
+  const InviteCommunityModal = () => {
+    if (!inviteTargetUser) return null;
+    return (
+      <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={closeInviteModal}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="text-lg font-bold">Invite to Community</h2>
+            <button onClick={closeInviteModal} className="p-2 hover:bg-gray-100 rounded-full">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="p-5">
+            <div className="text-sm text-gray-700 mb-3">
+              Invite <span className="font-semibold">{inviteTargetUser.name || 'User'}</span> to one of your communities.
+            </div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Community</label>
+            <select
+              value={inviteCommunityId}
+              onChange={(e) => setInviteCommunityId(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-100 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select a community</option>
+              {myCommunities.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {(c.icon ? `${c.icon} ` : '') + c.name}
+                </option>
+              ))}
+            </select>
+            {myCommunities.length === 0 && (
+              <div className="mt-2 text-xs text-gray-500">No communities available to invite from.</div>
+            )}
+          </div>
+          <div className="p-5 border-t border-gray-200 flex gap-3">
+            <button
+              onClick={closeInviteModal}
+              className="flex-1 px-4 py-3 rounded-xl border border-gray-300 font-medium hover:bg-gray-50"
+              disabled={inviteLoading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={sendCommunityInvite}
+              className="flex-1 px-4 py-3 rounded-xl text-white font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              disabled={inviteLoading || !inviteCommunityId}
+            >
+              {inviteLoading ? 'Sending...' : 'Send Invite'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const filteredConversations = conversations.filter(conv => {
     const matchesSearch = conv.participantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -260,11 +483,10 @@ export function MessagingPage({
 
     setError('');
     try {
-      const resp = await api.post<ApiMessage>('/messages/send', {
-        receiverId: activeConversation.participantId,
-        content: text,
-        type: 'text',
-      });
+      const resp = await api.post<ApiMessage>(
+        `/messaging/conversations/${activeConversation.id}/messages`,
+        { content: text }
+      );
 
       const created = mapApiMessageToUi(resp.data);
       setMessages((prev) => [...prev, created]);
@@ -310,6 +532,7 @@ export function MessagingPage({
   // Desktop View
   return (
     <div className="h-full lg:h-full flex bg-white rounded-[0px] border-0 lg:border border-gray-200 overflow-hidden">
+      <InviteCommunityModal />
       <style>{`
         .hide-scrollbar {
           scrollbar-width: none;
@@ -333,6 +556,107 @@ export function MessagingPage({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-gray-100 rounded-lg border-none text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          {/* People Search + Recommended */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                {peopleQuery.trim() ? 'Search Results' : 'Recommended People'}
+              </h3>
+            </div>
+            <div className="relative">
+              <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search people to message..."
+                value={peopleQuery}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPeopleQuery(v);
+                  if (v.trim().length === 0) {
+                    setPeopleResults([]);
+                    return;
+                  }
+                  searchPeople(v);
+                }}
+                className="w-full pl-9 pr-3 py-2 bg-gray-100 rounded-lg border-none text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div className="mt-2 space-y-1 max-h-60 overflow-y-auto hide-scrollbar">
+              {(peopleQuery.trim().length > 0 ? peopleResults : recommendedUsers)
+                .slice(0, 8)
+                .map((u) => {
+                  const isFollowing = followingUserIds.has(u._id);
+                  const displayName = u.name || 'User';
+                  const initials = (u.avatar || displayName.charAt(0).toUpperCase()) as string;
+                  return (
+                    <div
+                      key={u._id}
+                      className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <button
+                        onClick={() => startChatWithUser(u._id)}
+                        className={`flex items-center gap-2 min-w-0 text-left flex-1 ${!isFollowing ? 'opacity-60 grayscale' : ''}`}
+                        title={isFollowing ? 'Start Chat' : 'Follow to message'}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          {initials}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{displayName}</div>
+                          <div className="text-[11px] text-gray-500 truncate">{u.role || ''}</div>
+                        </div>
+                      </button>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openInviteModal(u);
+                          }}
+                          className="px-2 py-1 text-[11px] font-semibold bg-green-100 text-green-800 rounded-lg hover:bg-green-200 border border-green-200 transition-colors"
+                          title="Invite to community"
+                        >
+                          Invite
+                        </button>
+                        {isFollowing ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              unfollow(u._id);
+                            }}
+                            className="px-2 py-1 text-[11px] font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 border border-gray-200 transition-colors"
+                          >
+                            Following
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              follow(u._id);
+                            }}
+                            className="px-2 py-1 text-[11px] font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition-colors"
+                          >
+                            Follow
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {loadingPeople && (
+                <div className="p-2 text-xs text-gray-600 flex items-center gap-2">
+                  <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  Loading people...
+                </div>
+              )}
+              {peopleQuery.trim() && peopleResults.length === 0 && !loadingPeople && (
+                <div className="p-2 text-xs text-gray-500 italic text-center">No people found matching "{peopleQuery}"</div>
+              )}
+            </div>
           </div>
 
           {error && (

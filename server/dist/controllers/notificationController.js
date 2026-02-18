@@ -47,7 +47,7 @@ const markAllAsRead = async (req, res) => {
 };
 exports.markAllAsRead = markAllAsRead;
 // Helper function to create notification (internal use)
-const createNotification = async (userId, type, title, content, link, senderId) => {
+const createNotification = async (userId, type, title, content, link, senderId, metadata) => {
     try {
         await Notification_1.default.create({
             user: userId,
@@ -56,6 +56,7 @@ const createNotification = async (userId, type, title, content, link, senderId) 
             content,
             link,
             sender: senderId,
+            metadata,
         });
     }
     catch (error) {

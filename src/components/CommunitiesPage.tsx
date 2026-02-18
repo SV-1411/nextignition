@@ -172,7 +172,9 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
       setLoading(true);
       await api.post('/communities', {
         name: newCommunityName.trim(),
+        icon: '💬',
         description: newCommunityDescription.trim(),
+        allowedRoles: ['founder', 'co-founder', 'expert', 'investor'],
       });
       setIsCreateCommunityOpen(false);
       setNewCommunityName('');
@@ -313,72 +315,22 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
     pdf.save(`shared-post-${messageId}.pdf`);
   };
 
-  const CreateCommunityModal = () => {
-    if (!isCreateCommunityOpen) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setIsCreateCommunityOpen(false)}>
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-          <div className="p-5 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-lg font-bold">Create Community</h2>
-            <button onClick={() => setIsCreateCommunityOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-              <input
-                value={newCommunityName}
-                onChange={(e) => setNewCommunityName(e.target.value)}
-                className="w-full p-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="e.g. Growth Mentors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                value={newCommunityDescription}
-                onChange={(e) => setNewCommunityDescription(e.target.value)}
-                className="w-full p-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="What is this community about?"
-                rows={4}
-              />
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
-            )}
-          </div>
-
-          <div className="p-5 border-t border-gray-200 flex gap-3">
-            <button
-              onClick={() => setIsCreateCommunityOpen(false)}
-              className="flex-1 px-4 py-3 rounded-xl border border-gray-300 font-medium hover:bg-gray-50"
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleCreateCommunity}
-              className="flex-1 px-4 py-3 rounded-xl text-white font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-              disabled={loading || !newCommunityName.trim()}
-            >
-              Create
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // Mobile Communities List View
   const MobileCommunitiesList = () => (
     <div className="h-full bg-gray-50 flex flex-col">
       <div className="bg-white border-b border-gray-200 p-4">
-        <h1 className="text-xl font-bold">Communities</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Communities</h1>
+          {userRole === 'expert' && (
+            <button
+              onClick={() => setIsCreateCommunityOpen(true)}
+              className="px-3 py-2 bg-indigo-600 text-white rounded-lg font-medium flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {communities.map((community) => (
@@ -741,6 +693,63 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
 
   return (
     <>
+      {isCreateCommunityOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setIsCreateCommunityOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Create Community</h2>
+              <button onClick={() => setIsCreateCommunityOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  value={newCommunityName}
+                  onChange={(e) => setNewCommunityName(e.target.value)}
+                  className="w-full p-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g. Growth Mentors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={newCommunityDescription}
+                  onChange={(e) => setNewCommunityDescription(e.target.value)}
+                  className="w-full p-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="What is this community about?"
+                  rows={4}
+                />
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-gray-200 flex gap-3">
+              <button
+                onClick={() => setIsCreateCommunityOpen(false)}
+                className="flex-1 px-4 py-3 rounded-xl border border-gray-300 font-medium hover:bg-gray-50"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateCommunity}
+                className="flex-1 px-4 py-3 rounded-xl text-white font-bold bg-gray-900 hover:bg-black disabled:opacity-50"
+                disabled={loading || !newCommunityName.trim()}
+              >
+                {loading ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile View */}
       <div className="lg:hidden h-screen bg-gray-50">
         {mobileView === 'communities' && <MobileCommunitiesList />}
@@ -773,7 +782,18 @@ export function CommunitiesPage({ userRole, userId }: CommunitiesPageProps) {
           <div className="flex-1 overflow-y-auto">
             {!selectedCommunity ? (
               <div className="p-2">
-                <div className="text-xs font-bold text-gray-400 uppercase px-2 py-2">Your Communities</div>
+                <div className="flex items-center justify-between px-2 py-2">
+                  <div className="text-xs font-bold text-gray-400 uppercase">Your Communities</div>
+                  {userRole === 'expert' && (
+                    <button
+                      onClick={() => setIsCreateCommunityOpen(true)}
+                      className="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                      title="Create Community"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
                 {communities.map((community) => (
                   <button
                     key={community._id}

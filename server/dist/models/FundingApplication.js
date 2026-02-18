@@ -37,13 +37,41 @@ const mongoose_1 = __importStar(require("mongoose"));
 const FundingApplicationSchema = new mongoose_1.Schema({
     founder: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     startup: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Startup' },
-    title: { type: String, required: true },
+    title: { type: String },
     pitchSummary: { type: String },
     fundingAsk: { type: Number },
     currency: { type: String, default: 'USD' },
     equityOffered: { type: Number },
     pitchDeckUrl: { type: String },
     demoVideoUrl: { type: String },
+    pitchDeck: {
+        url: { type: String },
+        originalName: { type: String },
+        size: { type: Number },
+        uploadedAt: { type: Date },
+    },
+    pitchVideo: {
+        url: { type: String },
+        originalName: { type: String },
+        size: { type: Number },
+        uploadedAt: { type: Date },
+    },
+    businessDocuments: [
+        {
+            url: { type: String, required: true },
+            originalName: { type: String },
+            size: { type: Number },
+            uploadedAt: { type: Date },
+            docType: { type: String },
+        },
+    ],
+    steps: {
+        profileComplete: { type: Boolean, default: false },
+        pitchDeckUploaded: { type: Boolean, default: false },
+        pitchVideoUploaded: { type: Boolean, default: false },
+        businessDocumentsUploaded: { type: Boolean, default: false },
+        finalSubmitted: { type: Boolean, default: false },
+    },
     tags: [{ type: String }],
     status: {
         type: String,

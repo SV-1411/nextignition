@@ -1,4 +1,3 @@
-import { PortfolioItem } from './PortfolioItem';
 import { AIPortfolioInsights } from './AIPortfolioInsights';
 import { EnhancedHomeFeed } from './EnhancedHomeFeed';
 import { ProfilePage } from './ProfilePage';
@@ -72,19 +71,54 @@ import { RoleSwitcher, UserRole } from './RoleSwitcher';
 import { FounderDashboard } from './FounderDashboard';
 import { ExpertDashboard } from './ExpertDashboard';
 
+type SidebarItem = {
+  icon: any;
+  label: string;
+  badge?: number;
+};
+
+type Startup = {
+  id: number;
+  name: string;
+  tagline: string;
+  founder: string;
+  industry: string;
+  stage: string;
+  fundingGoal: string;
+  raised: string;
+  valuation: string;
+  location: string;
+  teamSize: number;
+  revenue: string;
+  growth: string;
+  matchScore: number;
+};
+
 type DealFlowItem = {
   id: number;
   startup: string;
   founder: string;
   amount: string;
   stage: string;
-  lastUpdate: string;
+  lastUpdated: string;
+  status: string;
+};
+
+type PortfolioItem = {
+  id: number;
+  startup: string;
+  invested: string;
+  equity: string;
+  currentValue: string;
+  roi: number;
+  sector: string;
 };
 
 export function InvestorDashboard() {
   const [activeTab, setActiveTab] = useState('Home Feed');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [view, setView] = useState<'home' | 'discover' | 'pipeline' | 'portfolio' | 'dealroom'>('home');
   const [currentRole, setCurrentRole] = useState<UserRole>('investor');
@@ -549,7 +583,7 @@ export function InvestorDashboard() {
 
           {/* Events View */}
           {activeTab === 'Events' && (
-            <EventsPage userRole="investor" userId={1} />
+            <EventsPage userRole="investor" />
           )}
 
           {/* Podcasts View */}
@@ -559,7 +593,7 @@ export function InvestorDashboard() {
 
           {/* News View */}
           {activeTab === 'News' && (
-            <NewsFeedPage userRole="investor" userId={1} />
+            <NewsFeedPage />
           )}
 
           {/* Ignisha AI View */}

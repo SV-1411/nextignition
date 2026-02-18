@@ -34,14 +34,17 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const communitySchema = new mongoose_1.Schema({
-    name: { type: String, required: true },
-    icon: { type: String, required: true },
-    description: { type: String, required: true },
-    roleExclusive: { type: String, default: null },
-    memberCount: { type: Number, default: 0 },
-    allowedRoles: [{ type: String, enum: ['founder', 'expert', 'investor', 'co-founder'] }],
-    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
-    members: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
+const AvailabilitySchema = new mongoose_1.Schema({
+    expert: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    dayOfWeek: { type: Number, required: true, min: 0, max: 6 },
+    slots: [
+        {
+            startTime: { type: String, required: true },
+            endTime: { type: String, required: true },
+        },
+    ],
+    unavailableDates: [{ type: Date }],
 }, { timestamps: true });
-exports.default = mongoose_1.default.model('Community', communitySchema);
+// Ensure an expert only has one availability document per day of week
+AvailabilitySchema.index({ expert: 1, dayOfWeek: 1 }, { unique: true });
+exports.default = mongoose_1.default.model('Availability', AvailabilitySchema);

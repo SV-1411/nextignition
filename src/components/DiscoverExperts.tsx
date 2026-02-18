@@ -16,7 +16,8 @@ import {
   Users,
   BookOpen,
   Target,
-  Briefcase
+  Briefcase,
+  X
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
 import { ProfileViewModal } from './ProfileViewModal';
@@ -599,14 +600,48 @@ function BookingModal({ expert, onClose }: BookingModalProps) {
   const [notes, setNotes] = useState('');
   const [isBooking, setIsBooking] = useState(false);
   const [bookingError, setBookingError] = useState('');
-  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<{startTime: string, endTime: string}[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   useEffect(() => {
-    if (selectedDate && selectedTime) {
-      // Check if slot is available
-      // This would be expanded with real availability checking
-    }
-  }, [selectedDate, selectedTime]);
+    const fetchExpertAvailability = async () => {
+      if (!selectedDate) return;
+      
+      setLoadingSlots(true);
+      setBookingError('');
+      try {
+        const date = new Date(selectedDate);
+        const dayOfWeek = date.getDay();
+        
+        // Fetch both weekly availability and specific date slots
+        const [weeklyResponse, specificResponse] = await Promise.all([
+          api.get(`/availability/expert/${expert.id}`),
+          api.get(`/availability/expert/${expert.id}/date/${selectedDate}`).catch(() => ({ data: null }))
+        ]);
+        
+        // Check if there's specific date availability first
+        if (specificResponse.data && specificResponse.data.slots && specificResponse.data.slots.length > 0) {
+          setAvailableSlots(specificResponse.data.slots);
+        } else {
+          // Fall back to weekly schedule
+          const dayAvailability = weeklyResponse.data.find((a: any) => a.dayOfWeek === dayOfWeek);
+          if (dayAvailability) {
+            setAvailableSlots(dayAvailability.slots || []);
+          } else {
+            setAvailableSlots([]);
+            setBookingError('Expert has no availability set for this date.');
+          }
+        }
+      } catch (error: any) {
+        console.error('Failed to fetch availability', error);
+        setBookingError('Could not load availability for this expert.');
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+
+    fetchExpertAvailability();
+  }, [selectedDate, expert.id]);
 
   const handleBooking = async () => {
     if (!selectedDate || !selectedTime || !topic) {
@@ -618,7 +653,7 @@ function BookingModal({ expert, onClose }: BookingModalProps) {
     setBookingError('');
 
     try {
-      const response = await api.post('/booking', {
+      await api.post('/bookings', {
         expert: expert.id,
         date: selectedDate,
         startTime: selectedTime,
@@ -627,9 +662,8 @@ function BookingModal({ expert, onClose }: BookingModalProps) {
         notes,
       });
 
-      // Success - close modal and show success message
       onClose();
-      alert('Session booked successfully! Check your email for confirmation details.');
+      alert('Session booked successfully! You will receive a notification.');
     } catch (error: any) {
       setBookingError(error.response?.data?.message || 'Failed to book session');
     } finally {
@@ -671,7 +705,10 @@ function BookingModal({ expert, onClose }: BookingModalProps) {
             <input
               type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e) => {
+                setSelectedDate(e.target.value);
+                setSelectedTime('');
+              }}
               min={new Date().toISOString().split('T')[0]}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -682,20 +719,30 @@ function BookingModal({ expert, onClose }: BookingModalProps) {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Select Time
             </label>
-            <select
-              value={selectedTime}
-              onChange={(e) => setSelectedTime(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select a time</option>
-              {[
-                '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-                '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
-                '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-              ].map(time => (
-                <option key={time} value={time}>{time}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedTime}
+                onChange={(e) => setSelectedTime(e.target.value)}
+                disabled={loadingSlots || !selectedDate || availableSlots.length === 0}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+              >
+                <option value="">
+                  {loadingSlots ? 'Loading slots...' : 
+                   !selectedDate ? 'Select a date first' :
+                   availableSlots.length === 0 ? 'No slots available' : 'Select a time'}
+                </option>
+                {availableSlots.map((slot, index) => (
+                  <option key={`${slot.startTime}-${slot.endTime}-${index}`} value={slot.startTime}>
+                    {slot.startTime} - {slot.endTime}
+                  </option>
+                ))}
+              </select>
+              {loadingSlots && (
+                <div className="absolute right-8 top-1/2 -translate-y-1/2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Duration */}

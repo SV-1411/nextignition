@@ -525,7 +525,7 @@ export function ExpertDashboard() {
         {activeTab === 'Podcasts' && <PodcastsPage userRole="expert" />}
 
         {/* News Tab */}
-        {activeTab === 'News' && <NewsFeedPage userRole="expert" userId={currentUser?.id || 1} />}
+        {activeTab === 'News' && <NewsFeedPage />}
 
         {/* Ignisha AI Tab */}
         {activeTab === 'Ignisha AI' && <IgnishaAIDashboard userRole="expert" />}

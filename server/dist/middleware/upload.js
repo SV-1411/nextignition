@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.upload = void 0;
+exports.uploadAny = exports.uploadVideo = exports.uploadDocs = exports.upload = void 0;
 const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
@@ -35,5 +35,51 @@ exports.upload = (0, multer_1.default)({
     fileFilter,
     limits: {
         fileSize: 5 * 1024 * 1024,
+    },
+});
+const docsFileFilter = (_req, file, cb) => {
+    const allowed = [
+        'application/pdf',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+    }
+    else {
+        cb(new Error('Only PDF/PPT/PPTX/DOC/DOCX/XLS/XLSX files are allowed'));
+    }
+};
+exports.uploadDocs = (0, multer_1.default)({
+    storage,
+    fileFilter: docsFileFilter,
+    limits: {
+        fileSize: 50 * 1024 * 1024,
+    },
+});
+const videoFileFilter = (_req, file, cb) => {
+    const allowed = ['video/mp4', 'video/webm', 'video/quicktime'];
+    if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+    }
+    else {
+        cb(new Error('Only MP4/WEBM/MOV videos are allowed'));
+    }
+};
+exports.uploadVideo = (0, multer_1.default)({
+    storage,
+    fileFilter: videoFileFilter,
+    limits: {
+        fileSize: 200 * 1024 * 1024,
+    },
+});
+exports.uploadAny = (0, multer_1.default)({
+    storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024,
     },
 });

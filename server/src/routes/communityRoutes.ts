@@ -4,6 +4,8 @@ import { uploadAny } from '../middleware/upload';
 import {
   getCommunities,
   createCommunity,
+  sendCommunityInvite,
+  respondToCommunityInvite,
   joinCommunity,
   leaveCommunity,
   getChannels,
@@ -18,6 +20,8 @@ const router = express.Router();
 
 router.get('/', protect, getCommunities);
 router.post('/', protect, createCommunity);
+router.post('/:communityId/invite', protect, sendCommunityInvite);
+router.post('/invites/:inviteId/respond', protect, respondToCommunityInvite);
 router.post('/:communityId/join', protect, joinCommunity);
 router.post('/:communityId/leave', protect, leaveCommunity);
 router.get('/:communityId/channels', protect, getChannels);

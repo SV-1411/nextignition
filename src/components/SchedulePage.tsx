@@ -11,6 +11,7 @@ import {
   MapPin,
   AlertCircle,
   Save,
+  Trash2,
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
 import api from '../services/api';
@@ -22,6 +23,12 @@ interface AvailabilitySlot {
 
 interface AvailabilityDay {
   dayOfWeek: number;
+  slots: AvailabilitySlot[];
+}
+
+interface SpecificDateSlot {
+  _id?: string;
+  date: string;
   slots: AvailabilitySlot[];
 }
 
@@ -41,16 +48,23 @@ interface Booking {
 
 export function SchedulePage() {
   const [availability, setAvailability] = useState<AvailabilityDay[]>([]);
+  const [specificDateSlots, setSpecificDateSlots] = useState<SpecificDateSlot[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<number>(0);
   const [newSlot, setNewSlot] = useState({ startTime: '09:00', endTime: '10:00' });
   const [saving, setSaving] = useState(false);
+  
+  // Specific date availability
+  const [selectedSpecificDate, setSelectedSpecificDate] = useState('');
+  const [specificDateNewSlot, setSpecificDateNewSlot] = useState({ startTime: '09:00', endTime: '10:00' });
+  const [savingSpecificDate, setSavingSpecificDate] = useState(false);
 
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   useEffect(() => {
     fetchAvailability();
+    fetchSpecificDateSlots();
     fetchBookings();
   }, []);
 
@@ -61,6 +75,16 @@ export function SchedulePage() {
     } catch (error) {
       console.error('Failed to fetch availability', error);
       setAvailability([]);
+    }
+  };
+
+  const fetchSpecificDateSlots = async () => {
+    try {
+      const response = await api.get('/availability/specific-dates');
+      setSpecificDateSlots(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch specific date slots', error);
+      setSpecificDateSlots([]);
     }
   };
 
@@ -123,6 +147,61 @@ export function SchedulePage() {
 
   const getCurrentDaySlots = () => {
     return availability.find(d => d.dayOfWeek === selectedDay)?.slots || [];
+  };
+
+  const addSpecificDateSlot = async () => {
+    if (!selectedSpecificDate) {
+      alert('Please select a date first');
+      return;
+    }
+    setSavingSpecificDate(true);
+    try {
+      const existingEntry = specificDateSlots.find(s => s.date === selectedSpecificDate);
+      const updatedSlots = [...(existingEntry?.slots || []), specificDateNewSlot];
+      
+      await api.post('/availability/specific-date', {
+        date: selectedSpecificDate,
+        slots: updatedSlots,
+      });
+
+      await fetchSpecificDateSlots();
+      setSpecificDateNewSlot({ startTime: '09:00', endTime: '10:00' });
+    } catch (error) {
+      console.error('Failed to add specific date slot', error);
+    } finally {
+      setSavingSpecificDate(false);
+    }
+  };
+
+  const removeSpecificDateSlot = async (date: string, slotIndex: number) => {
+    try {
+      const entry = specificDateSlots.find(s => s.date === date);
+      if (!entry) return;
+
+      const updatedSlots = entry.slots.filter((_, index) => index !== slotIndex);
+      
+      if (updatedSlots.length === 0) {
+        await api.delete(`/availability/specific-date/${date}`);
+      } else {
+        await api.post('/availability/specific-date', {
+          date,
+          slots: updatedSlots,
+        });
+      }
+
+      await fetchSpecificDateSlots();
+    } catch (error) {
+      console.error('Failed to remove specific date slot', error);
+    }
+  };
+
+  const deleteSpecificDate = async (date: string) => {
+    try {
+      await api.delete(`/availability/specific-date/${date}`);
+      await fetchSpecificDateSlots();
+    } catch (error) {
+      console.error('Failed to delete specific date', error);
+    }
   };
 
   const upcomingBookings = bookings
@@ -235,6 +314,135 @@ export function SchedulePage() {
                 </button>
               </div>
             </div>
+          </motion.div>
+
+          {/* Specific Date Availability */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white rounded-xl shadow-sm p-6"
+          >
+            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-green-600" />
+              Specific Date Availability
+            </h2>
+            
+            <p className="text-sm text-gray-600 mb-4">
+              Set specific dates when you're available (overrides weekly schedule)
+            </p>
+
+            {/* Date Selector */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Date
+              </label>
+              <input
+                type="date"
+                value={selectedSpecificDate}
+                onChange={(e) => setSelectedSpecificDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+
+            {/* Slots for selected date */}
+            {selectedSpecificDate && (
+              <div className="mb-6">
+                <h3 className="font-bold text-lg mb-3">
+                  Slots for {new Date(selectedSpecificDate).toLocaleDateString()}
+                </h3>
+                
+                <div className="space-y-3 mb-4">
+                  {specificDateSlots
+                    .find(s => s.date === selectedSpecificDate)?.slots
+                    .map((slot, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-100">
+                        <div className="flex items-center gap-3">
+                          <Clock className="w-4 h-4 text-green-600" />
+                          <span className="font-medium">
+                            {slot.startTime} - {slot.endTime}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => removeSpecificDateSlot(selectedSpecificDate, index)}
+                          className="p-1 hover:bg-red-100 rounded"
+                        >
+                          <X className="w-4 h-4 text-red-500" />
+                        </button>
+                      </div>
+                    ))}
+                  
+                  {(!specificDateSlots.find(s => s.date === selectedSpecificDate)?.slots.length) && (
+                    <div className="text-center py-4 text-gray-500">
+                      <p>No slots set for this date</p>
+                      <p className="text-xs">Add slots below or this date will use weekly schedule</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Add slot for specific date */}
+                <div className="border-t pt-4">
+                  <h4 className="font-bold mb-3 text-sm">Add Time Slot for This Date</h4>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Start</label>
+                      <input
+                        type="time"
+                        value={specificDateNewSlot.startTime}
+                        onChange={(e) => setSpecificDateNewSlot(prev => ({ ...prev, startTime: e.target.value }))}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">End</label>
+                      <input
+                        type="time"
+                        value={specificDateNewSlot.endTime}
+                        onChange={(e) => setSpecificDateNewSlot(prev => ({ ...prev, endTime: e.target.value }))}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                    <button
+                      onClick={addSpecificDateSlot}
+                      disabled={savingSpecificDate}
+                      className="mt-5 px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      {savingSpecificDate ? 'Adding...' : 'Add'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* List of all specific dates */}
+            {specificDateSlots.length > 0 && (
+              <div className="border-t pt-4 mt-4">
+                <h4 className="font-bold mb-3 text-sm">All Specific Date Slots</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {specificDateSlots.map((entry) => (
+                    <div key={entry.date} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                      <div>
+                        <span className="font-medium text-sm">
+                          {new Date(entry.date).toLocaleDateString()}
+                        </span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {entry.slots.length} slot{entry.slots.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => deleteSpecificDate(entry.date)}
+                        className="p-1 hover:bg-red-100 rounded text-red-500"
+                        title="Delete all slots for this date"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         </div>
 

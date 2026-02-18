@@ -2,8 +2,10 @@ import { Request, Response } from 'express';
 import Community from '../models/Community';
 import Channel from '../models/Channel';
 import CommunityMessage from '../models/CommunityMessage';
+import CommunityInvite from '../models/CommunityInvite';
 import User from '../models/User';
 import { AuthRequest } from '../middleware/auth';
+import { createNotification } from './notificationController';
 
 // Get communities for current user's role
 export const getCommunities = async (req: AuthRequest, res: Response) => {
@@ -20,6 +22,138 @@ export const getCommunities = async (req: AuthRequest, res: Response) => {
     res.json(communities);
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch communities' });
+  }
+};
+
+export const sendCommunityInvite = async (req: AuthRequest, res: Response) => {
+  try {
+    const inviterId = req.user?.id;
+    if (!inviterId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { communityId } = req.params;
+    const { inviteeUserId } = req.body;
+    if (!inviteeUserId) {
+      return res.status(400).json({ message: 'inviteeUserId is required' });
+    }
+
+    const community = await Community.findById(communityId);
+    if (!community) {
+      return res.status(404).json({ message: 'Community not found' });
+    }
+
+    const isMember = (community.members || []).some((m: any) => String(m) === String(inviterId));
+    if (!isMember) {
+      return res.status(403).json({ message: 'You must be a member to invite others' });
+    }
+
+    const inviteeUser = await User.findById(inviteeUserId).select('_id name role roles');
+    if (!inviteeUser?._id) {
+      return res.status(404).json({ message: 'Invitee user not found' });
+    }
+
+    const inviteeRoles = (inviteeUser as any).roles?.length ? (inviteeUser as any).roles : [(inviteeUser as any).role];
+    const canJoin = (inviteeRoles || []).some((r: string) => (community.allowedRoles as any[]).includes(r));
+    if (!canJoin) {
+      return res.status(400).json({ message: 'Invitee role is not allowed in this community' });
+    }
+
+    const alreadyMember2 = (community.members || []).some((m: any) => String(m) === String(inviteeUserId));
+    if (alreadyMember2) {
+      return res.status(400).json({ message: 'User is already a member' });
+    }
+
+    const invite = await CommunityInvite.findOneAndUpdate(
+      { community: communityId as any, invitee: inviteeUserId as any, inviter: inviterId as any },
+      { community: communityId as any, invitee: inviteeUserId as any, inviter: inviterId as any, status: 'pending' },
+      { new: true, upsert: true }
+    );
+
+    await createNotification(
+      String(inviteeUserId),
+      'community',
+      'Community invite',
+      `You were invited to join ${community.name}.`,
+      '/dashboard?tab=communities',
+      String(inviterId),
+      { action: 'community_invite', inviteId: String(invite._id), communityId: String(community._id) }
+    );
+
+    res.status(201).json({ invite });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Failed to send invite', error: error?.message });
+  }
+};
+
+export const respondToCommunityInvite = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { inviteId } = req.params;
+    const { action } = req.body as { action?: 'accept' | 'decline' };
+    if (action !== 'accept' && action !== 'decline') {
+      return res.status(400).json({ message: 'action must be accept or decline' });
+    }
+
+    const invite = await CommunityInvite.findById(inviteId);
+    if (!invite) {
+      return res.status(404).json({ message: 'Invite not found' });
+    }
+
+    if (String(invite.invitee) !== String(userId)) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (invite.status !== 'pending') {
+      return res.status(400).json({ message: 'Invite already responded' });
+    }
+
+    const community = await Community.findById(invite.community);
+    if (!community) {
+      return res.status(404).json({ message: 'Community not found' });
+    }
+
+    if (action === 'decline') {
+      invite.status = 'declined';
+      await invite.save();
+      return res.json({ invite });
+    }
+
+    const userRoles = (req.user?.roles && req.user.roles.length > 0)
+      ? req.user.roles
+      : [req.user?.role || 'founder'];
+    const canJoin = userRoles.some((r: string) => (community.allowedRoles as any[]).includes(r));
+    if (!canJoin) {
+      return res.status(403).json({ message: 'You are not allowed to join this community' });
+    }
+
+    const alreadyMember = (community.members || []).some((m: any) => String(m) === String(userId));
+    if (!alreadyMember) {
+      community.members = [...(community.members || []), userId] as any;
+      community.memberCount = (community.memberCount || 0) + 1;
+      await community.save();
+    }
+
+    invite.status = 'accepted';
+    await invite.save();
+
+    await createNotification(
+      String(invite.inviter),
+      'community',
+      'Invite accepted',
+      `Your community invite was accepted for ${community.name}.`,
+      '/dashboard?tab=communities',
+      String(userId),
+      { action: 'community_invite_accepted', inviteId: String(invite._id), communityId: String(community._id) }
+    );
+
+    res.json({ invite, community });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Failed to respond to invite', error: error?.message });
   }
 };
 

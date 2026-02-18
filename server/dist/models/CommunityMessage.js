@@ -39,6 +39,13 @@ const communityMessageSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     content: { type: String, required: true },
     type: { type: String, enum: ['text', 'system', 'milestone', 'poll', 'shared-post'], default: 'text' },
+    attachments: [{
+            url: { type: String, required: true },
+            originalName: { type: String, required: true },
+            mimeType: { type: String, required: true },
+            size: { type: Number, required: true },
+        }],
+    sharedPostId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Post' },
     reactions: [{
             emoji: { type: String, required: true },
             count: { type: Number, default: 0 },

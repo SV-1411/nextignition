@@ -34,14 +34,9 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const communitySchema = new mongoose_1.Schema({
-    name: { type: String, required: true },
-    icon: { type: String, required: true },
-    description: { type: String, required: true },
-    roleExclusive: { type: String, default: null },
-    memberCount: { type: Number, default: 0 },
-    allowedRoles: [{ type: String, enum: ['founder', 'expert', 'investor', 'co-founder'] }],
-    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
-    members: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
+const FollowSchema = new mongoose_1.Schema({
+    follower: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    following: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
 }, { timestamps: true });
-exports.default = mongoose_1.default.model('Community', communitySchema);
+FollowSchema.index({ follower: 1, following: 1 }, { unique: true });
+exports.default = mongoose_1.default.model('Follow', FollowSchema);

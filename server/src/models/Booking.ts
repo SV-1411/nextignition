@@ -4,6 +4,7 @@ export interface IBooking extends Document {
     founder: mongoose.Schema.Types.ObjectId;
     expert: mongoose.Schema.Types.ObjectId;
     date: Date;
+    bookingDate: Date;
     startTime: string;
     duration: number; // in minutes
     status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
@@ -19,6 +20,7 @@ const BookingSchema: Schema = new Schema(
         founder: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         expert: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         date: { type: Date, required: true },
+        bookingDate: { type: Date, required: true },
         startTime: { type: String, required: true },
         duration: { type: Number, default: 60 },
         status: {
@@ -31,6 +33,16 @@ const BookingSchema: Schema = new Schema(
         meetingLink: { type: String },
     },
     { timestamps: true }
+);
+
+BookingSchema.index(
+    { expert: 1, bookingDate: 1, startTime: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            status: { $in: ['pending', 'confirmed'] },
+        },
+    }
 );
 
 export default mongoose.model<IBooking>('Booking', BookingSchema);

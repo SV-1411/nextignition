@@ -38,6 +38,7 @@ const BookingSchema = new mongoose_1.Schema({
     founder: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     expert: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     date: { type: Date, required: true },
+    bookingDate: { type: Date, required: true },
     startTime: { type: String, required: true },
     duration: { type: Number, default: 60 },
     status: {
@@ -49,4 +50,10 @@ const BookingSchema = new mongoose_1.Schema({
     notes: { type: String },
     meetingLink: { type: String },
 }, { timestamps: true });
+BookingSchema.index({ expert: 1, bookingDate: 1, startTime: 1 }, {
+    unique: true,
+    partialFilterExpression: {
+        status: { $in: ['pending', 'confirmed'] },
+    },
+});
 exports.default = mongoose_1.default.model('Booking', BookingSchema);

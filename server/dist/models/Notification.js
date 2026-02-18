@@ -38,12 +38,13 @@ const NotificationSchema = new mongoose_1.Schema({
     user: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     type: {
         type: String,
-        enum: ['booking', 'message', 'connection', 'system', 'ai', 'post', 'review'],
+        enum: ['booking', 'message', 'connection', 'system', 'ai', 'post', 'review', 'community'],
         required: true,
     },
     title: { type: String, required: true },
     content: { type: String, required: true },
     link: { type: String },
+    metadata: { type: mongoose_1.Schema.Types.Mixed },
     read: { type: Boolean, default: false },
     sender: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });

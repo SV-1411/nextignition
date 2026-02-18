@@ -2,17 +2,112 @@ import { Response } from 'express';
 import Conversation from '../models/Conversation';
 import DirectMessage from '../models/DirectMessage';
 import User from '../models/User';
+import Follow from '../models/Follow';
+import Community from '../models/Community';
+import CommunityInvite from '../models/CommunityInvite';
 import { AuthRequest } from '../middleware/auth';
 import { io } from '../index';
-
-// Allowed roles for direct messaging
-// NOTE: Messaging is enabled for any authenticated user. Role gating was removed
-// to allow "search for all the people" from the messaging UI.
-const MESSAGING_ROLES = ['founder', 'co-founder', 'expert'];
+import { createNotification } from './notificationController';
 
 // Check if user can message
-const canUseMessaging = (_user: any): boolean => {
-  return true;
+const canMessageUser = async (fromUserId: string, toUserId: string): Promise<boolean> => {
+  if (!fromUserId || !toUserId) return false;
+  if (String(fromUserId) === String(toUserId)) return true;
+  const row = await Follow.findOne({ follower: fromUserId as any, following: toUserId as any }).select('_id');
+  return !!row;
+};
+
+export const inviteToCommunityViaMessage = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { otherUserId, communityId } = req.body as { otherUserId?: string; communityId?: string };
+    if (!otherUserId || !communityId) {
+      return res.status(400).json({ message: 'otherUserId and communityId are required' });
+    }
+
+    const otherUser = await User.findById(otherUserId).select('_id name role roles');
+    if (!otherUser?._id) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const allowed = await canMessageUser(String(userId), String(otherUserId));
+    if (!allowed) {
+      return res.status(403).json({ message: 'Follow this user to message them' });
+    }
+
+    const community = await Community.findById(communityId);
+    if (!community) {
+      return res.status(404).json({ message: 'Community not found' });
+    }
+
+    const isMember = (community.members || []).some((m: any) => String(m) === String(userId));
+    if (!isMember) {
+      return res.status(403).json({ message: 'You must be a member to invite others' });
+    }
+
+    const alreadyMember = (community.members || []).some((m: any) => String(m) === String(otherUserId));
+    if (alreadyMember) {
+      return res.status(400).json({ message: 'User is already a member' });
+    }
+
+    const inviteeRoles = (otherUser as any).roles?.length ? (otherUser as any).roles : [(otherUser as any).role];
+    const canJoin = (inviteeRoles || []).some((r: string) => (community.allowedRoles as any[]).includes(r));
+    if (!canJoin) {
+      return res.status(400).json({ message: 'Invitee role is not allowed in this community' });
+    }
+
+    const invite = await CommunityInvite.findOneAndUpdate(
+      { community: communityId as any, invitee: otherUserId as any, inviter: userId as any },
+      { community: communityId as any, invitee: otherUserId as any, inviter: userId as any, status: 'pending' },
+      { new: true, upsert: true }
+    );
+
+    await createNotification(
+      String(otherUserId),
+      'community',
+      'Community invite',
+      `You were invited to join ${community.name}.`,
+      '/dashboard?tab=communities',
+      String(userId),
+      { action: 'community_invite', inviteId: String(invite._id), communityId: String(community._id) }
+    );
+
+    let conversation = await Conversation.findOne({
+      participants: { $all: [userId, otherUserId] },
+      type: 'direct',
+    });
+    if (!conversation) {
+      conversation = await Conversation.create({ participants: [userId, otherUserId], type: 'direct' });
+    }
+
+    const dmText = `I invited you to join ${community.name}. Check your notifications to accept.`;
+    const message = await DirectMessage.create({
+      conversationId: conversation._id as any,
+      sender: userId as any,
+      content: dmText,
+      readBy: [userId],
+    });
+
+    await message.populate('sender', 'name avatar role');
+    await Conversation.findByIdAndUpdate(conversation._id, {
+      lastMessage: { content: dmText, sender: userId as any, timestamp: new Date() },
+      lastMessageAt: new Date(),
+    });
+
+    io.to(`user_${otherUserId}`).emit('new_direct_message', {
+      message,
+      conversationId: String(conversation._id),
+    });
+
+    await conversation.populate('participants', 'name role roles avatar isVerified');
+    res.status(201).json({ invite, conversation, message });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Failed to invite user', error: error?.message });
+  }
 };
 
 // Get or create conversation between two users
@@ -21,10 +116,6 @@ export const getOrCreateConversation = async (req: AuthRequest, res: Response) =
     const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
-    }
-
-    if (!canUseMessaging(req.user)) {
-      return res.status(403).json({ message: 'Messaging is not available for this user' });
     }
 
     const { otherUserId } = req.body;
@@ -38,7 +129,10 @@ export const getOrCreateConversation = async (req: AuthRequest, res: Response) =
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Any authenticated user can receive messages.
+    const allowed = await canMessageUser(String(userId), String(otherUserId));
+    if (!allowed) {
+      return res.status(403).json({ message: 'Follow this user to message them' });
+    }
 
     // Find existing conversation
     let conversation = await Conversation.findOne({
@@ -101,6 +195,18 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
 
     if (!conversation) {
       return res.status(403).json({ message: 'You are not part of this conversation' });
+    }
+
+    if (conversation.type === 'direct') {
+      const otherParticipant = (conversation.participants as any[]).find(
+        (p) => String(p) !== String(userId)
+      );
+      if (otherParticipant) {
+        const allowed = await canMessageUser(String(userId), String(otherParticipant));
+        if (!allowed) {
+          return res.status(403).json({ message: 'Follow this user to message them' });
+        }
+      }
     }
 
     const messages = await DirectMessage.find({ conversationId: conversationId as any })
@@ -187,19 +293,12 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Search users to message (only founders, co-founders, experts)
+// Search users to message (all authenticated users)
 export const searchUsers = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
-    }
-
-    // Log current user for debugging
-    console.log('Search users - current user:', req.user);
-
-    if (!canUseMessaging(req.user)) {
-      return res.status(403).json({ message: 'Messaging is not available for this user' });
     }
 
     const { query } = req.query;
@@ -214,31 +313,23 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
       searchCriteria.name = { $regex: query.trim(), $options: 'i' };
     }
 
-    console.log('Search criteria:', JSON.stringify(searchCriteria, null, 2));
-
     // Search for users, excluding self
     const users = await User.find(searchCriteria)
       .select('name role roles avatar isVerified')
       .limit(50);
 
-    console.log(`Found ${users.length} users`);
     res.json(users);
   } catch (error: any) {
-    console.error('Search users error:', error);
     res.status(500).json({ message: 'Failed to search users', error: error?.message });
   }
 };
 
-// Get all messaging-eligible users (for "start conversation" list)
+// Get all messaging-eligible users
 export const getMessagingUsers = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
-    }
-
-    if (!canUseMessaging(req.user)) {
-      return res.status(403).json({ message: 'Messaging is not available for this user' });
     }
 
     // Return all users (excluding self). UI can decide what to show.
@@ -251,7 +342,6 @@ export const getMessagingUsers = async (req: AuthRequest, res: Response) => {
 
     res.json(users);
   } catch (error: any) {
-    console.error('getMessagingUsers error:', error);
     res.status(500).json({ message: 'Failed to fetch users', error: error?.message });
   }
 };

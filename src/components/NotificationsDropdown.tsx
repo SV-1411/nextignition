@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   Calendar, 
@@ -15,204 +16,140 @@ import {
   CheckCircle,
   AlertCircle
 } from 'lucide-react';
+import api from '../services/api';
 
-interface Notification {
-  id: number;
-  type: 'booking' | 'message' | 'payment' | 'review' | 'reminder' | 'achievement' | 'update' | 'alert' | 'milestone';
+type UserRole = 'founder' | 'investor' | 'expert';
+
+type ApiNotification = {
+  _id: string;
+  type: 'booking' | 'message' | 'connection' | 'system' | 'ai' | 'post' | 'review' | 'community';
+  title: string;
+  content: string;
+  link?: string;
+  read?: boolean;
+  sender?: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+};
+
+interface UiNotification {
+  id: string;
+  type: ApiNotification['type'];
   title: string;
   message: string;
   time: string;
   unread: boolean;
   icon: any;
+  link?: string;
+  metadata?: Record<string, any>;
 }
 
 interface NotificationsDropdownProps {
   isOpen: boolean;
   onClose: () => void;
-  userRole: 'founder' | 'investor' | 'expert';
+  userRole: UserRole;
 }
 
 export function NotificationsDropdown({ isOpen, onClose, userRole }: NotificationsDropdownProps) {
-  const getNotifications = (): Notification[] => {
-    switch (userRole) {
-      case 'founder':
-        return [
-          {
-            id: 1,
-            type: 'message',
-            title: 'New Message from Investor',
-            message: 'Sarah Johnson from Acme Ventures wants to schedule a meeting',
-            time: '5 min ago',
-            unread: true,
-            icon: MessageCircle
-          },
-          {
-            id: 2,
-            type: 'milestone',
-            title: 'Milestone Achieved',
-            message: 'You\'ve reached 1,000 active users! 🎉',
-            time: '1 hour ago',
-            unread: true,
-            icon: TrendingUp
-          },
-          {
-            id: 3,
-            type: 'booking',
-            title: 'Upcoming Session',
-            message: 'Your mentorship session with Dr. Johnson starts in 30 minutes',
-            time: '2 hours ago',
-            unread: true,
-            icon: Calendar
-          },
-          {
-            id: 4,
-            type: 'update',
-            title: 'Application Update',
-            message: 'Your Y Combinator application moved to next round',
-            time: '3 hours ago',
-            unread: false,
-            icon: FileText
-          },
-          {
-            id: 5,
-            type: 'message',
-            title: 'Expert Response',
-            message: 'Marcus Williams replied to your consultation request',
-            time: '5 hours ago',
-            unread: false,
-            icon: MessageCircle
-          },
-          {
-            id: 6,
-            type: 'alert',
-            title: 'Task Reminder',
-            message: 'Don\'t forget to update your pitch deck for tomorrow',
-            time: '1 day ago',
-            unread: false,
-            icon: AlertCircle
-          }
-        ];
-      
-      case 'investor':
-        return [
-          {
-            id: 1,
-            type: 'alert',
-            title: 'New Deal Opportunity',
-            message: 'TechFlow AI matched your investment criteria (AI/ML, Series A)',
-            time: '10 min ago',
-            unread: true,
-            icon: TrendingUp
-          },
-          {
-            id: 2,
-            type: 'message',
-            title: 'Founder Message',
-            message: 'Sarah Chen from TechFlow AI sent you a pitch deck',
-            time: '30 min ago',
-            unread: true,
-            icon: MessageCircle
-          },
-          {
-            id: 3,
-            type: 'update',
-            title: 'Portfolio Update',
-            message: 'GreenScale hit $1M ARR milestone',
-            time: '2 hours ago',
-            unread: true,
-            icon: TrendingUp
-          },
-          {
-            id: 4,
-            type: 'booking',
-            title: 'Meeting Scheduled',
-            message: 'Due diligence call with StartupHub confirmed for Jan 28',
-            time: '4 hours ago',
-            unread: false,
-            icon: Calendar
-          },
-          {
-            id: 5,
-            type: 'payment',
-            title: 'Investment Processed',
-            message: '$500K investment in HealthAI has been processed',
-            time: '1 day ago',
-            unread: false,
-            icon: DollarSign
-          },
-          {
-            id: 6,
-            type: 'achievement',
-            title: 'Portfolio Milestone',
-            message: 'You\'ve invested in 25 startups this year!',
-            time: '2 days ago',
-            unread: false,
-            icon: Award
-          }
-        ];
-      
-      case 'expert':
+  const [notifications, setNotifications] = useState<UiNotification[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+
+  const relativeTime = (iso: string) => {
+    const t = new Date(iso).getTime();
+    const diff = Date.now() - t;
+    const sec = Math.floor(diff / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    return `${day}d ago`;
+  };
+
+  const iconFor = (type: ApiNotification['type']) => {
+    switch (type) {
+      case 'booking':
+        return Calendar;
+      case 'message':
+        return MessageCircle;
+      case 'review':
+        return Star;
+      case 'community':
+        return Users;
+      case 'system':
+        return Bell;
+      case 'connection':
+        return Users;
       default:
-        return [
-          {
-            id: 1,
-            type: 'booking',
-            title: 'New Booking Request',
-            message: 'Alex Johnson wants to book a session about Product-Market Fit',
-            time: '5 min ago',
-            unread: true,
-            icon: Calendar
-          },
-          {
-            id: 2,
-            type: 'message',
-            title: 'New Message',
-            message: 'Sarah Chen sent you a message',
-            time: '15 min ago',
-            unread: true,
-            icon: MessageCircle
-          },
-          {
-            id: 3,
-            type: 'payment',
-            title: 'Payment Received',
-            message: 'You received $450 from GreenScale consultation',
-            time: '1 hour ago',
-            unread: true,
-            icon: DollarSign
-          },
-          {
-            id: 4,
-            type: 'review',
-            title: 'New Review',
-            message: 'Emily Rodriguez left you a 5-star review',
-            time: '2 hours ago',
-            unread: false,
-            icon: Star
-          },
-          {
-            id: 5,
-            type: 'reminder',
-            title: 'Session Reminder',
-            message: 'Your session with TechFlow AI starts in 30 minutes',
-            time: '3 hours ago',
-            unread: false,
-            icon: Clock
-          },
-          {
-            id: 6,
-            type: 'achievement',
-            title: 'Achievement Unlocked',
-            message: 'You\'ve reached 100 completed sessions!',
-            time: '1 day ago',
-            unread: false,
-            icon: Award
-          }
-        ];
+        return AlertCircle;
     }
   };
 
-  const notifications = getNotifications();
+  const fetchNotifications = async () => {
+    setLoading(true);
+    try {
+      const resp = await api.get<ApiNotification[]>('/notifications');
+      const mapped: UiNotification[] = (resp.data || []).map((n) => ({
+        id: n._id,
+        type: n.type,
+        title: n.title,
+        message: n.content,
+        time: relativeTime(n.createdAt),
+        unread: !n.read,
+        icon: iconFor(n.type),
+        link: n.link,
+        metadata: n.metadata,
+      }));
+      setNotifications(mapped);
+    } catch {
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  const unreadCount = useMemo(() => notifications.filter((n) => n.unread).length, [notifications]);
+
+  const markAllRead = async () => {
+    try {
+      await api.put('/notifications/read-all');
+      setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+    } catch {
+      // ignore
+    }
+  };
+
+  const markOneRead = async (id: string) => {
+    try {
+      await api.put(`/notifications/${id}/read`);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, unread: false } : n)));
+    } catch {
+      // ignore
+    }
+  };
+
+  const respondInvite = async (inviteId: string, action: 'accept' | 'decline', notificationId: string) => {
+    setBusyIds((prev) => new Set(prev).add(notificationId));
+    try {
+      await api.post(`/communities/invites/${inviteId}/respond`, { action });
+      await markOneRead(notificationId);
+      await fetchNotifications();
+    } finally {
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(notificationId);
+        return next;
+      });
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -235,9 +172,12 @@ export function NotificationsDropdown({ isOpen, onClose, userRole }: Notificatio
         {/* Header */}
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-gray-900">Notifications</h3>
+            <h3 className="font-bold text-gray-900">Notifications{unreadCount > 0 ? ` (${unreadCount})` : ''}</h3>
             <div className="flex items-center gap-2">
-              <button className="text-xs font-medium text-blue-600 hover:text-blue-700">
+              <button
+                onClick={markAllRead}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
                 Mark all read
               </button>
               <button 
@@ -252,14 +192,29 @@ export function NotificationsDropdown({ isOpen, onClose, userRole }: Notificatio
 
         {/* Notifications List */}
         <div className="max-h-[500px] overflow-y-auto">
+          {loading && (
+            <div className="p-4 text-sm text-gray-600">Loading...</div>
+          )}
+
           {notifications.map((notification, idx) => {
             const Icon = notification.icon;
+            const isInvite =
+              notification.type === 'community' &&
+              notification.metadata?.action === 'community_invite' &&
+              typeof notification.metadata?.inviteId === 'string';
+            const inviteId = isInvite ? String(notification.metadata?.inviteId) : '';
+            const isBusy = busyIds.has(notification.id);
+
             return (
               <motion.div
                 key={notification.id}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: idx * 0.05 }}
+                onClick={() => {
+                  if (notification.unread) markOneRead(notification.id);
+                  if (notification.link) window.location.href = notification.link;
+                }}
                 className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${
                   notification.unread ? 'bg-blue-50/50' : ''
                 }`}
@@ -269,23 +224,15 @@ export function NotificationsDropdown({ isOpen, onClose, userRole }: Notificatio
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                     notification.type === 'booking' ? 'bg-blue-100' :
                     notification.type === 'message' ? 'bg-purple-100' :
-                    notification.type === 'payment' ? 'bg-green-100' :
                     notification.type === 'review' ? 'bg-yellow-100' :
-                    notification.type === 'reminder' ? 'bg-orange-100' :
-                    notification.type === 'milestone' ? 'bg-pink-100' :
-                    notification.type === 'update' ? 'bg-blue-100' :
-                    notification.type === 'alert' ? 'bg-red-100' :
+                    notification.type === 'community' ? 'bg-green-100' :
                     'bg-purple-100'
                   }`}>
                     <Icon className={`w-5 h-5 ${
                       notification.type === 'booking' ? 'text-blue-600' :
                       notification.type === 'message' ? 'text-purple-600' :
-                      notification.type === 'payment' ? 'text-green-600' :
                       notification.type === 'review' ? 'text-yellow-600' :
-                      notification.type === 'reminder' ? 'text-orange-600' :
-                      notification.type === 'milestone' ? 'text-pink-600' :
-                      notification.type === 'update' ? 'text-blue-600' :
-                      notification.type === 'alert' ? 'text-red-600' :
+                      notification.type === 'community' ? 'text-green-600' :
                       'text-purple-600'
                     }`} />
                   </div>
@@ -299,12 +246,42 @@ export function NotificationsDropdown({ isOpen, onClose, userRole }: Notificatio
                       )}
                     </div>
                     <p className="text-sm text-gray-600 mb-2 line-clamp-2">{notification.message}</p>
+
+                    {isInvite && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={isBusy}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            respondInvite(inviteId, 'accept', notification.id);
+                          }}
+                          className="px-2 py-1 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          disabled={isBusy}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            respondInvite(inviteId, 'decline', notification.id);
+                          }}
+                          className="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 border border-gray-200 disabled:opacity-50"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    )}
+
                     <span className="text-xs text-gray-500">{notification.time}</span>
                   </div>
                 </div>
               </motion.div>
             );
           })}
+
+          {!loading && notifications.length === 0 && (
+            <div className="p-4 text-sm text-gray-600">No notifications</div>
+          )}
         </div>
 
         {/* Footer */}

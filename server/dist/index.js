@@ -26,6 +26,9 @@ const fundingRoutes_1 = __importDefault(require("./routes/fundingRoutes"));
 const cofounderRoutes_1 = __importDefault(require("./routes/cofounderRoutes"));
 const newsRoutes_1 = __importDefault(require("./routes/newsRoutes"));
 const podcastRoutes_1 = __importDefault(require("./routes/podcastRoutes"));
+const availabilityRoutes_1 = __importDefault(require("./routes/availabilityRoutes"));
+const messagingRoutes_1 = __importDefault(require("./routes/messagingRoutes"));
+const followRoutes_1 = __importDefault(require("./routes/followRoutes"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const httpServer = (0, http_1.createServer)(app);
@@ -105,6 +108,9 @@ app.use('/api/funding', fundingRoutes_1.default);
 app.use('/api/cofounders', cofounderRoutes_1.default);
 app.use('/api/news', newsRoutes_1.default);
 app.use('/api/podcasts', podcastRoutes_1.default);
+app.use('/api/availability', availabilityRoutes_1.default);
+app.use('/api/messaging', messagingRoutes_1.default);
+app.use('/api/follow', followRoutes_1.default);
 // Health check route (important for Render deployment)
 app.get('/', (req, res) => {
     res.json({

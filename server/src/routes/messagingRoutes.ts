@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { protect } from '../middleware/auth';
 import { uploadAny } from '../middleware/upload';
 import {
+  inviteToCommunityViaMessage,
   getOrCreateConversation,
   getMyConversations,
   getMessages,
@@ -16,6 +17,7 @@ const router = Router();
 // Conversation routes
 router.post('/conversations', protect, getOrCreateConversation);
 router.get('/conversations', protect, getMyConversations);
+router.post('/conversations/invite-community', protect, inviteToCommunityViaMessage);
 
 // Message routes
 router.get('/conversations/:conversationId/messages', protect, getMessages);

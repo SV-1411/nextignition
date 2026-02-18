@@ -5,10 +5,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const auth_1 = require("../middleware/auth");
+const upload_1 = require("../middleware/upload");
 const fundingController_1 = require("../controllers/fundingController");
 const router = express_1.default.Router();
 router.get('/startups', fundingController_1.listFundingStartups);
 router.post('/applications', auth_1.protect, fundingController_1.submitFundingApplication);
+router.get('/my-submission', auth_1.protect, fundingController_1.getMyFundingDraft);
+router.put('/my-submission', auth_1.protect, fundingController_1.upsertMyFundingDraft);
+router.post('/pitch-deck', auth_1.protect, upload_1.uploadDocs.single('pitchDeck'), fundingController_1.uploadMyPitchDeck);
+router.post('/pitch-video', auth_1.protect, upload_1.uploadVideo.single('pitchVideo'), fundingController_1.uploadMyPitchVideo);
+router.post('/business-documents', auth_1.protect, upload_1.uploadDocs.array('documents', 10), fundingController_1.uploadMyBusinessDocuments);
+router.post('/my-submission/submit', auth_1.protect, fundingController_1.submitMyFundingDraft);
 router.get('/bookmarks', auth_1.protect, fundingController_1.listMyBookmarks);
 router.post('/startups/:startupId/bookmark', auth_1.protect, fundingController_1.bookmarkStartup);
 router.post('/startups/:startupId/interest', auth_1.protect, fundingController_1.expressInterest);
