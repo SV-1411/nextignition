@@ -33,6 +33,7 @@ import { DealRoomPage } from './components/DealRoomPage';
 import { PodcastsPage } from './components/PodcastsPage';
 import { NewsFeedPage } from './components/NewsFeedPage';
 import { HelpSupportPage } from './components/HelpSupportPage';
+import { PitchDeckSummarizerPage } from './components/PitchDeckSummarizerPage';
 import { useEffect, useState } from 'react';
 import { getCurrentUser } from './services/authService';
 
@@ -95,6 +96,8 @@ export default function App() {
         setCurrentPage('news-feed');
       } else if (hash === 'help-support') {
         setCurrentPage('help-support');
+      } else if (hash === 'pitch-deck-summarizer') {
+        setCurrentPage('pitch-deck-summarizer');
       } else {
         setCurrentPage('home');
       }
@@ -164,7 +167,11 @@ export default function App() {
   }
 
   if (currentPage.startsWith('profile/')) {
-    const userRole = currentPage.split('/')[1] as 'founder' | 'expert' | 'investor' | 'admin';
+    const roleFromPath = currentPage.split('/')[1];
+    if (roleFromPath === 'admin') {
+      return <AdminDashboard />;
+    }
+    const userRole = roleFromPath as 'founder' | 'expert' | 'investor';
     return <ProfilePage userRole={userRole} />;
   }
 
@@ -194,6 +201,10 @@ export default function App() {
 
   if (currentPage === 'help-support') {
     return <HelpSupportPage />;
+  }
+
+  if (currentPage === 'pitch-deck-summarizer') {
+    return <PitchDeckSummarizerPage />;
   }
 
   return (

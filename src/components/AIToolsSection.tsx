@@ -3,6 +3,12 @@ import { Sparkles, ArrowRight, FileText, UserCircle, Presentation } from 'lucide
 import { brandColors } from '../utils/colors';
 
 export function AIToolsSection() {
+  const handleToolClick = (title: string) => {
+    if (title === 'Pitch Deck Summarizer') {
+      window.location.hash = '#pitch-deck-summarizer';
+    }
+  };
+
   const tools = [
     {
       icon: FileText,
@@ -215,6 +221,7 @@ export function AIToolsSection() {
                       whileInView={{ opacity: 1, y: 0 }}
                       viewport={{ once: true }}
                       transition={{ duration: 0.6, delay: 0.6 + index * 0.1 }}
+                      onClick={() => handleToolClick(tool.title)}
                       className="group inline-flex items-center gap-2 px-6 py-3 rounded-full text-white font-semibold text-sm hover:shadow-lg transition-all hover:gap-3"
                       style={{ backgroundColor: tool.color }}
                     >

@@ -66,6 +66,43 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
     }
 };
 
+export const maybeAuth = async (req: AuthRequest, _res: Response, next: NextFunction): Promise<void> => {
+    let token: string | undefined;
+
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        token = req.headers.authorization.split(' ')[1];
+    } else if (typeof req.query?.token === 'string') {
+        token = req.query.token;
+    }
+
+    if (!token) {
+        next();
+        return;
+    }
+
+    try {
+        const secretsToTry = ['secret', process.env.JWT_SECRET].filter(Boolean) as string[];
+        let decoded: any = null;
+        let lastErr: any = null;
+        for (const secret of secretsToTry) {
+            try {
+                decoded = jwt.verify(token, secret);
+                break;
+            } catch (err) {
+                lastErr = err;
+            }
+        }
+        if (!decoded) {
+            throw lastErr || new Error('Invalid token');
+        }
+        req.user = decoded;
+    } catch {
+        // Ignore invalid tokens for optional auth
+    }
+
+    next();
+};
+
 export const authorize = (...roles: string[]) => {
     return (req: AuthRequest, res: Response, next: NextFunction): void => {
         if (!req.user || !roles.includes(req.user.role)) {

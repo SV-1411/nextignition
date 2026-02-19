@@ -41,10 +41,17 @@ export const io = new Server(httpServer, {
     },
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT || 5000);
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nextignition';
 
 // Middleware
+app.use((req, _res, next) => {
+    if (req.path.startsWith('/api/ai')) {
+        console.log('[AI route hit]', req.method, req.path);
+    }
+    next();
+});
+
 app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (mobile apps, curl, etc)
@@ -139,11 +146,26 @@ mongoose
     .connect(MONGODB_URI)
     .then(() => {
         console.log('Connected to MongoDB');
-        httpServer.listen(PORT, () => {
-            console.log(`Server is running on port ${PORT}`);
-            console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-            console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
-        });
+
+        const startServer = (port: number) => {
+            httpServer
+                .once('error', (error: any) => {
+                    if (error?.code === 'EADDRINUSE') {
+                        console.warn(`Port ${port} is in use. Trying port ${port + 1}...`);
+                        startServer(port + 1);
+                        return;
+                    }
+                    console.error('Server startup error:', error);
+                    process.exit(1);
+                })
+                .listen(port, () => {
+                    console.log(`Server is running on port ${port}`);
+                    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+                    console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+                });
+        };
+
+        startServer(PORT);
     })
     .catch((err) => {
         console.error('Database connection error:', err);
