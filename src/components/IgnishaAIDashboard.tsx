@@ -46,6 +46,7 @@ import {
   Zap
 } from 'lucide-react';
 import { brandColors } from '../utils/colors';
+import { analyzePitchDeck, aiChat, runQuickAction, matchCofounders, matchExperts, matchClients, fetchDeckInsights } from '../services/aiService';
 
 interface IgnishaAIDashboardProps {
   userRole: 'founder' | 'expert' | 'investor';
@@ -74,7 +75,277 @@ interface Conversation {
   pinned: boolean;
 }
 
-import { generateSummary, aiChat } from '../services/aiService';
+type AnalysisResult = {
+  summary?: string;
+  executiveSummary?: string;
+  highlights?: string[] | string;
+  keyHighlights?: string[] | string;
+  insights?: string[] | string;
+  strengths?: string[] | string;
+  gaps?: string[] | string;
+  investorReadinessScore?: number | string;
+  [key: string]: any;
+};
+
+type ScoreMetric = {
+  label: string;
+  score: number;
+  note: string;
+};
+
+const normalizeList = (raw: unknown): string[] => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean);
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split('\n')
+      .map((line) => line.replace(/^[-•\s]+/, '').trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const hasAnyKeyword = (text: string, keywords: string[]) => keywords.some((keyword) => text.includes(keyword));
+
+const clampScore = (score: number) => Math.max(0, Math.min(10, Math.round(score * 10) / 10));
+
+const computePitchDeckScoreMetrics = (analysis: AnalysisResult): ScoreMetric[] => {
+  const summaryText = analysis.summary || analysis.executiveSummary || '';
+  const highlights = normalizeList(analysis.highlights || analysis.keyHighlights || analysis.insights);
+  const strengths = normalizeList(analysis.strengths);
+  const gaps = normalizeList(analysis.gaps);
+
+  const fullText = [summaryText, ...highlights, ...strengths, ...gaps].join(' ').toLowerCase();
+  const readinessRaw = Number(analysis.investorReadinessScore);
+  const hasReadiness = Number.isFinite(readinessRaw);
+
+  const problemScore = clampScore(
+    (hasAnyKeyword(fullText, ['problem']) ? 2 : 0) +
+    (hasAnyKeyword(fullText, ['solution']) ? 2 : 0) +
+    Math.min(3, highlights.length) +
+    (summaryText.length > 120 ? 3 : summaryText.length > 60 ? 2 : 1)
+  );
+
+  const marketScore = clampScore(
+    (hasAnyKeyword(fullText, ['market', 'tam', 'sam', 'som', 'positioning']) ? 4 : 1) +
+    (hasAnyKeyword(fullText, ['growth', 'opportunity', 'segment']) ? 2 : 0) +
+    (highlights.length >= 3 ? 2 : highlights.length >= 1 ? 1 : 0) +
+    (gaps.length >= 3 && hasAnyKeyword(fullText, ['market validation']) ? 1 : 2)
+  );
+
+  const businessModelScore = clampScore(
+    (hasAnyKeyword(fullText, ['revenue', 'subscription', 'monetization', 'pricing']) ? 5 : 1.5) +
+    (hasAnyKeyword(fullText, ['gtm', 'go-to-market', 'customer']) ? 2 : 0) +
+    Math.min(2, strengths.length * 0.8) +
+    (hasAnyKeyword(fullText, ['unit economics', 'ltv', 'cac']) ? 1 : 0.5)
+  );
+
+  const teamScore = clampScore(
+    (hasAnyKeyword(fullText, ['team', 'founder', 'advisor', 'hiring']) ? 5 : 2) +
+    Math.min(3, strengths.length) +
+    (hasAnyKeyword(fullText, ['experience', 'credibility']) ? 2 : 0)
+  );
+
+  const overallScore = clampScore(
+    hasReadiness
+      ? readinessRaw / 10
+      : (problemScore + marketScore + businessModelScore + teamScore) / 4 - Math.min(1.5, gaps.length * 0.25)
+  );
+
+  return [
+    { label: 'Problem & Solution', score: problemScore, note: 'Clarity of pain point and solution fit' },
+    { label: 'Market Opportunity', score: marketScore, note: 'Market size, demand, and positioning signals' },
+    { label: 'Business Model', score: businessModelScore, note: 'Monetization and go-to-market strength' },
+    { label: 'Team Readiness', score: teamScore, note: 'Founder credibility and execution confidence' },
+    { label: 'Overall Deck Score', score: overallScore, note: 'Investor readiness snapshot from AI output' },
+  ];
+};
+
+const useMockData = (import.meta.env.VITE_USE_MOCK_AI ?? 'true') === 'true';
+const useMockChat = (import.meta.env.VITE_USE_MOCK_AI_CHAT ?? 'false') === 'true';
+
+const mockPitchDeckAnalysis: AnalysisResult = {
+  executiveSummary: 'AI-powered mental wellness app addressing anxiety with CBT exercises and a subscription model.',
+  highlights: ['Clear problem-solution fit', 'Large market opportunity', 'Recurring revenue model'],
+  strengths: ['Strong user pain point', 'Scalable distribution', 'Clear monetization'],
+  gaps: ['Go-to-market details', 'Traction metrics', 'Differentiation proof'],
+  investorReadinessScore: 46,
+};
+
+const mockCofounders = [
+  {
+    name: 'Aarav Mehta',
+    role: 'CTO / Full-stack',
+    location: 'Bengaluru',
+    matchScore: 9.1,
+    skills: ['React', 'Node.js', 'GenAI'],
+    reason: 'Built 2 SaaS products and shipped AI copilots in production.',
+  },
+  {
+    name: 'Neha Kapoor',
+    role: 'Growth & GTM',
+    location: 'Mumbai',
+    matchScore: 8.6,
+    skills: ['B2B SaaS', 'Growth loops', 'Pricing'],
+    reason: 'Scaled ARR from $0 to $1.2M in 14 months at a startup.',
+  },
+  {
+    name: 'Karan Iyer',
+    role: 'Product / UX',
+    location: 'Remote',
+    matchScore: 8.3,
+    skills: ['Product strategy', 'User research', 'Design systems'],
+    reason: 'Deep product validation experience with early-stage teams.',
+  },
+];
+
+const mockExperts = [
+  {
+    name: 'Dr. Riya Shah',
+    specialty: 'Fundraising Strategy',
+    rating: 4.8,
+    location: 'Delhi NCR',
+    highlights: ['Former VC associate', '50+ pitch deck reviews'],
+  },
+  {
+    name: 'Vikram Rao',
+    specialty: 'Growth Marketing',
+    rating: 4.7,
+    location: 'Bengaluru',
+    highlights: ['Paid acquisition expert', 'Scaled 10M+ users'],
+  },
+  {
+    name: 'Sara Lobo',
+    specialty: 'Product & GTM',
+    rating: 4.9,
+    location: 'Remote',
+    highlights: ['Ex-Stripe PM', 'B2B SaaS GTM'],
+  },
+];
+
+const mockClients = [
+  {
+    name: 'NovaHealth',
+    stage: 'Seed',
+    location: 'Hyderabad',
+    budget: '$4k/mo',
+    need: 'Growth strategy and onboarding optimization',
+  },
+  {
+    name: 'FinOrbit',
+    stage: 'Pre-seed',
+    location: 'Remote',
+    budget: '$2k/mo',
+    need: 'Product positioning and GTM roadmap',
+  },
+  {
+    name: 'SupplySync',
+    stage: 'Seed',
+    location: 'Pune',
+    budget: '$3k/mo',
+    need: 'Sales playbook and funnel optimization',
+  },
+];
+
+const mockValidator = {
+  score: 7.8,
+  verdict: 'Promising with clear differentiation',
+  strengths: ['Clear pain point', 'Large market tailwinds', 'Subscription-friendly model'],
+  risks: ['Go-to-market specifics are thin', 'Early differentiation not fully proven'],
+  nextSteps: ['Run 10 founder interviews', 'Validate pricing with 5 buyers', 'Ship a 2-week MVP'],
+};
+
+const mockFinancials = {
+  assumptions: ['$49 avg monthly subscription', '3% monthly churn', '7% MoM user growth'],
+  projections: [
+    { year: 'Year 1', revenue: '$120k', expenses: '$280k', runway: '12 months' },
+    { year: 'Year 2', revenue: '$520k', expenses: '$640k', runway: '8 months' },
+    { year: 'Year 3', revenue: '$1.8M', expenses: '$1.4M', runway: '18 months' },
+  ],
+};
+
+const mockCompetitors = [
+  { name: 'MindEase', focus: 'Meditation + CBT', edge: 'Strong brand, weaker B2B offering' },
+  { name: 'CalmWorks', focus: 'Enterprise wellness', edge: 'Great distribution, average personalization' },
+  { name: 'CBTNow', focus: 'Self-serve CBT', edge: 'Solid content, minimal AI tailoring' },
+];
+
+const mockContentDraft = {
+  title: 'How founders can design mental wellness into remote-first teams',
+  hook: 'Burnout is a revenue leak. Here is how to fix it without bloated programs.',
+  outline: [
+    'Define the cost of burnout with one metric',
+    'Embed micro-wellness rituals into product and culture',
+    'Measure outcomes with a simple weekly pulse',
+  ],
+  cta: 'Want the checklist? I can share a plug-and-play template.',
+};
+
+const mockTemplatePack = [
+  { name: 'Investor Pitch Deck', type: 'Pitch Deck', tier: 'Free' },
+  { name: 'Business Plan Lite', type: 'Business Plan', tier: 'Free' },
+  { name: 'Financial Model Starter', type: 'Financial', tier: 'Pro' },
+  { name: 'Fundraising Email Sequence', type: 'Email', tier: 'Free' },
+];
+
+const createMockActionResponse = (action: string) => {
+  switch (action) {
+    case 'validator':
+      return { type: 'businessValidator', data: mockValidator, summary: mockValidator.verdict };
+    case 'financial':
+      return { type: 'financialProjection', data: mockFinancials, summary: 'Starter projections ready.' };
+    case 'competitor':
+      return { type: 'competitorAnalysis', data: { competitors: mockCompetitors }, summary: 'Competitor map ready.' };
+    case 'content':
+      return { type: 'contentDraft', data: mockContentDraft, summary: mockContentDraft.title };
+    case 'template':
+      return { type: 'templatePack', data: { templates: mockTemplatePack }, summary: 'Template pack generated.' };
+    default:
+      return { type: 'generic', data: {}, summary: 'Action completed.' };
+  }
+};
+
+const createMockDeckInsights = () => ({
+  summary: 'Generated insights from your pitch deck.',
+  cards: [
+    { type: 'businessValidator', data: mockValidator },
+    { type: 'financialProjection', data: mockFinancials },
+    { type: 'competitorAnalysis', data: { competitors: mockCompetitors } },
+    { type: 'contentDraft', data: mockContentDraft },
+    { type: 'templatePack', data: { templates: mockTemplatePack } },
+  ],
+});
+
+const createMockChatResponse = (text: string) => {
+  const lower = text.toLowerCase();
+  if (lower.includes('validate') || lower.includes('viability')) return 'Your idea looks promising. Focus on validating pricing and GTM.';
+  if (lower.includes('financial')) return 'I can draft projections once we lock your pricing and churn assumptions.';
+  if (lower.includes('competitor')) return 'I can map competitors across product, pricing, and distribution.';
+  if (lower.includes('content')) return 'Here is a post angle: customer pain to ROI, then a CTA for a demo.';
+  return 'I can help with strategy, fundraising, and execution. Ask me anything.';
+};
+
+const getActionPrompt = (action: string) => {
+  const map: Record<string, string> = {
+    validator: 'Can you validate my startup idea?',
+    financial: 'Build a financial projection model for my startup.',
+    competitor: 'Analyze competitors in my space.',
+    content: 'Draft a founder LinkedIn post for my product update.',
+    template: 'Generate a startup template pack for me.',
+  };
+  return map[action] || 'Run the selected AI action.';
+};
+
+const getActionSummary = (type: string, data: any) => {
+  if (type === 'businessValidator') return data?.verdict || 'Here is your business validator summary.';
+  if (type === 'financialProjection') return 'Here is a financial projection based on your profile.';
+  if (type === 'competitorAnalysis') return 'Competitor analysis ready.';
+  if (type === 'contentDraft') return data?.title || 'Content draft ready.';
+  if (type === 'templatePack') return 'Template pack generated.';
+  return 'AI output ready.';
+};
 
 export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -85,6 +356,7 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCofounderModal, setShowCofounderModal] = useState(false);
+  const [matchMode, setMatchMode] = useState<'cofounder' | 'experts' | 'client'>('cofounder');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
@@ -215,25 +487,49 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
     { id: 4, title: 'Competitor Analysis', preview: 'Who are my main competitors in...', timestamp: 'Jan 23', pinned: false },
   ]);
 
-  const handleQuickAction = (action: string) => {
+  const handleQuickAction = async (action: string) => {
     if (action === 'pitch-deck') {
       setShowUploadModal(true);
+      return;
     } else if (action === 'cofounder' || action === 'client-match') {
+      setMatchMode(action === 'client-match' ? 'client' : 'cofounder');
       setShowCofounderModal(true);
-    } else if (action === 'template') {
-      setShowTemplateModal(true);
+      return;
+    } else if (action === 'experts') {
+      setMatchMode('experts');
+      setShowCofounderModal(true);
+      return;
     } else {
-      // Simulate starting a conversation
-      const actionTitles: { [key: string]: string } = {
-        'validator': 'Can you help me validate my startup idea?',
-        'financial': 'Create a financial projection model for my SaaS startup',
-        'competitor': 'Analyze my competitors in the AI customer support space',
-        'content': 'Write a LinkedIn post about our latest product launch',
-        'experts': 'Find mentors who can help with growth marketing',
+      const userMessage: Message = {
+        id: Date.now(),
+        type: 'user',
+        content: getActionPrompt(action),
+        timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
       };
+      setActiveConversation(1);
+      setMessages((prev) => [...prev, userMessage]);
+      setIsTyping(true);
 
-      if (actionTitles[action]) {
-        handleSendMessage(actionTitles[action]);
+      try {
+        const response = useMockData ? createMockActionResponse(action) : await runQuickAction(action);
+        const aiMessage: Message = {
+          id: Date.now() + 1,
+          type: 'ai',
+          content: useMockData ? response.summary : getActionSummary(response?.type, response?.data),
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+          cardData: response?.data ? { type: response.type, ...response.data } : undefined,
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      } catch (error: any) {
+        const aiMessage: Message = {
+          id: Date.now() + 2,
+          type: 'ai',
+          content: error?.response?.data?.message || 'Unable to run this AI action right now.',
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      } finally {
+        setIsTyping(false);
       }
     }
   };
@@ -263,8 +559,11 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
       }));
 
       // Call backend AI with OpenRouter
-      const data = await aiChat(messageText, conversationHistory);
-      const aiResponse = data.response || data.summary || 'No response received';
+      const data = useMockChat ? { response: createMockChatResponse(messageText) } : await aiChat(messageText, conversationHistory);
+      const aiResponse = data.response || data.summary;
+      if (!aiResponse || !String(aiResponse).trim()) {
+        throw new Error('AI provider returned an empty response.');
+      }
 
       const aiMessage: Message = {
         id: messages.length + 2,
@@ -273,11 +572,11 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
         timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
       };
       setMessages(prev => [...prev, aiMessage]);
-    } catch (error) {
+    } catch (error: any) {
       const errorMessage: Message = {
         id: messages.length + 2,
         type: 'ai',
-        content: 'Sorry, I encountered an error processing your request. Please try again or check your API configuration.',
+        content: error?.response?.data?.message || error?.message || 'Sorry, I encountered an error processing your request.',
         timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -293,11 +592,150 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
   };
 
   const handleAnalyzeFile = () => {
-    if (uploadedFile) {
-      setShowUploadModal(false);
-      handleSendMessage(`Analyze my pitch deck: ${uploadedFile.name}`);
-      setUploadedFile(null);
-    }
+    if (!uploadedFile) return;
+
+    const fileToAnalyze = uploadedFile;
+    setShowUploadModal(false);
+    setActiveConversation(1);
+
+    const userMessage: Message = {
+      id: Date.now(),
+      type: 'user',
+      content: `Analyze my pitch deck: ${fileToAnalyze.name}`,
+      timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setIsTyping(true);
+
+    const analysisRequest = useMockData ? Promise.resolve(mockPitchDeckAnalysis) : analyzePitchDeck(fileToAnalyze);
+
+    analysisRequest
+      .then((data) => {
+        const analysis = (data || {}) as AnalysisResult;
+        const summaryText = analysis.summary || analysis.executiveSummary || 'Analysis completed.';
+        const highlights = normalizeList(analysis.highlights || analysis.keyHighlights || analysis.insights);
+        const strengths = normalizeList(analysis.strengths);
+        const gaps = normalizeList(analysis.gaps);
+        const scoreMetrics = computePitchDeckScoreMetrics(analysis);
+
+        const aiMessage: Message = {
+          id: Date.now() + 1,
+          type: 'ai',
+          content: summaryText,
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+          cardData: {
+            type: 'pitchDeckAnalysis',
+            summaryText,
+            highlights,
+            strengths,
+            gaps,
+            scoreMetrics,
+          },
+        };
+
+        setMessages((prev) => [...prev, aiMessage]);
+      })
+      .catch((error: any) => {
+        const aiErrorMessage: Message = {
+          id: Date.now() + 2,
+          type: 'ai',
+          content: error?.response?.data?.message || 'Unable to analyze this pitch deck right now.',
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, aiErrorMessage]);
+      })
+      .finally(() => {
+        setIsTyping(false);
+        setUploadedFile(null);
+      });
+  };
+
+  const handleMatchResults = () => {
+    const userPrompt =
+      matchMode === 'experts'
+        ? 'Find experts for my startup.'
+        : matchMode === 'client'
+          ? 'Find client matches based on my criteria.'
+          : 'Find co-founder matches based on my criteria.';
+
+    const userMessage: Message = {
+      id: Date.now(),
+      type: 'user',
+      content: userPrompt,
+      timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    };
+
+    setActiveConversation(1);
+    setMessages((prev) => [...prev, userMessage]);
+    setIsTyping(true);
+    setShowCofounderModal(false);
+
+    const request = matchMode === 'experts'
+      ? matchExperts({})
+      : matchMode === 'client'
+        ? matchClients({})
+        : matchCofounders({});
+
+    const mockResponse = matchMode === 'experts'
+      ? { type: 'expertMatches', matches: mockExperts, summary: 'Here are expert matches based on your criteria.' }
+      : matchMode === 'client'
+        ? { type: 'clientMatches', matches: mockClients, summary: 'Here are client opportunities aligned to your profile.' }
+        : { type: 'cofounderMatches', matches: mockCofounders, summary: 'Found co-founder matches based on your profile.' };
+
+    const finalRequest = useMockData ? Promise.resolve(mockResponse) : request;
+
+    finalRequest
+      .then((response) => {
+        const aiMessage: Message = {
+          id: Date.now() + 1,
+          type: 'ai',
+          content: response?.summary || 'Here are your matches.',
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+          cardData: response ? { type: response.type, matches: response.matches } : undefined,
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      })
+      .catch((error: any) => {
+        const aiMessage: Message = {
+          id: Date.now() + 2,
+          type: 'ai',
+          content: error?.response?.data?.message || 'Unable to fetch matches right now.',
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      })
+      .finally(() => {
+        setIsTyping(false);
+      });
+  };
+
+  const handleUseDeckInsights = () => {
+    setIsTyping(true);
+    const deckRequest = useMockData ? Promise.resolve(createMockDeckInsights()) : fetchDeckInsights();
+    deckRequest
+      .then((response) => {
+        const aiMessage: Message = {
+          id: Date.now(),
+          type: 'ai',
+          content: response?.summary || 'Generated insights from your pitch deck.',
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+          cardData: response ? { type: 'deckInsights', cards: response.cards } : undefined,
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      })
+      .catch((error: any) => {
+        const aiMessage: Message = {
+          id: Date.now() + 1,
+          type: 'ai',
+          content: error?.response?.data?.message || 'Unable to derive deck insights right now.',
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      })
+      .finally(() => {
+        setIsTyping(false);
+      });
   };
 
   const handleSaveSession = () => {
@@ -698,6 +1136,393 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
                           }}
                         >
                           <p className="text-sm leading-relaxed break-words overflow-hidden max-w-full" style={{ overflowWrap: 'break-word', wordBreak: 'break-word', maxWidth: '100%' }}>{message.content}</p>
+
+                          {message.type === 'ai' && message.cardData?.type === 'pitchDeckAnalysis' && (
+                            <div className="mt-4 space-y-4">
+                              <div className="flex items-center justify-end">
+                                <button
+                                  onClick={handleUseDeckInsights}
+                                  className="text-xs font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-50"
+                                  style={{ color: brandColors.navyBlue }}
+                                >
+                                  Use deck insights
+                                </button>
+                              </div>
+                              {Array.isArray(message.cardData?.scoreMetrics) && message.cardData.scoreMetrics.length > 0 && (
+                                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                  <h4 className="text-sm font-bold mb-3">Pitch Deck Score Metrics</h4>
+                                  <div className="space-y-2">
+                                    {message.cardData.scoreMetrics.map((metric: ScoreMetric) => (
+                                      <div key={metric.label} className="rounded-lg border border-gray-200 bg-gray-50 p-2.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <p className="text-xs font-semibold text-gray-900">{metric.label}</p>
+                                          <p className="text-xs font-bold" style={{ color: brandColors.navyBlue }}>
+                                            {metric.score.toFixed(1)}/10
+                                          </p>
+                                        </div>
+                                        <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                          <div
+                                            className="h-full rounded-full"
+                                            style={{ width: `${Math.min(100, metric.score * 10)}%`, backgroundColor: brandColors.navyBlue }}
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {Array.isArray(message.cardData?.highlights) && message.cardData.highlights.length > 0 && (
+                                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                  <h4 className="text-sm font-bold mb-2">Key Highlights</h4>
+                                  <ul className="list-disc pl-5 space-y-1 text-xs text-gray-700">
+                                    {message.cardData.highlights.map((item: string, index: number) => (
+                                      <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {Array.isArray(message.cardData?.strengths) && message.cardData.strengths.length > 0 && (
+                                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                  <h4 className="text-sm font-bold mb-2">Strengths</h4>
+                                  <ul className="list-disc pl-5 space-y-1 text-xs text-gray-700">
+                                    {message.cardData.strengths.map((item: string, index: number) => (
+                                      <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {Array.isArray(message.cardData?.gaps) && message.cardData.gaps.length > 0 && (
+                                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                  <h4 className="text-sm font-bold mb-2">Gaps</h4>
+                                  <ul className="list-disc pl-5 space-y-1 text-xs text-gray-700">
+                                    {message.cardData.gaps.map((item: string, index: number) => (
+                                      <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'businessValidator' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-sm font-bold">Business Validator</h4>
+                                <span className="text-xs font-bold" style={{ color: brandColors.navyBlue }}>
+                                  {message.cardData.score}/10
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-700">{message.cardData.verdict}</p>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                                <div>
+                                  <p className="font-semibold text-gray-900 mb-1">Strengths</p>
+                                  <ul className="list-disc pl-4 text-gray-700 space-y-1">
+                                    {message.cardData.strengths?.map((item: string, index: number) => (
+                                      <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-gray-900 mb-1">Risks</p>
+                                  <ul className="list-disc pl-4 text-gray-700 space-y-1">
+                                    {message.cardData.risks?.map((item: string, index: number) => (
+                                      <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-gray-900 mb-1">Next Steps</p>
+                                  <ul className="list-disc pl-4 text-gray-700 space-y-1">
+                                    {message.cardData.nextSteps?.map((item: string, index: number) => (
+                                      <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'cofounderMatches' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
+                              <h4 className="text-sm font-bold mb-3">Co-founder Matches</h4>
+                              <div className="space-y-2">
+                                {message.cardData.matches?.map((match: any) => (
+                                  <div key={match.name} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="text-xs font-semibold text-gray-900">{match.name}</p>
+                                        <p className="text-xs text-gray-600">{match.role} · {match.location}</p>
+                                      </div>
+                                      <span className="text-xs font-bold" style={{ color: brandColors.navyBlue }}>{match.matchScore}/10</span>
+                                    </div>
+                                    <p className="text-xs text-gray-700 mt-2">{match.reason}</p>
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {match.skills?.map((skill: string) => (
+                                        <span key={skill} className="px-2 py-0.5 bg-white border border-gray-200 rounded-full text-[10px] text-gray-700">{skill}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'expertMatches' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
+                              <h4 className="text-sm font-bold mb-3">Expert Matches</h4>
+                              <div className="space-y-2">
+                                {message.cardData.matches?.map((match: any) => (
+                                  <div key={match.name} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="text-xs font-semibold text-gray-900">{match.name}</p>
+                                        <p className="text-xs text-gray-600">{match.specialty} · {match.location}</p>
+                                      </div>
+                                      <span className="text-xs font-bold" style={{ color: brandColors.navyBlue }}>{match.rating}/5</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {match.highlights?.map((item: string) => (
+                                        <span key={item} className="px-2 py-0.5 bg-white border border-gray-200 rounded-full text-[10px] text-gray-700">{item}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'clientMatches' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
+                              <h4 className="text-sm font-bold mb-3">Client Matches</h4>
+                              <div className="space-y-2">
+                                {message.cardData.matches?.map((match: any) => (
+                                  <div key={match.name} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="text-xs font-semibold text-gray-900">{match.name}</p>
+                                        <p className="text-xs text-gray-600">{match.stage} · {match.location}</p>
+                                      </div>
+                                      <span className="text-xs font-bold" style={{ color: brandColors.navyBlue }}>{match.budget}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-700 mt-2">Need: {match.need}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'financialProjection' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 space-y-3">
+                              <h4 className="text-sm font-bold">Financial Projection</h4>
+                              <div className="text-xs text-gray-700">
+                                <p className="font-semibold mb-1">Assumptions</p>
+                                <ul className="list-disc pl-4 space-y-1">
+                                  {message.cardData.assumptions?.map((item: string, index: number) => (
+                                    <li key={`${item}-${index}`}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-left">
+                                  <thead>
+                                    <tr className="text-gray-500">
+                                      <th className="py-1">Year</th>
+                                      <th className="py-1">Revenue</th>
+                                      <th className="py-1">Expenses</th>
+                                      <th className="py-1">Runway</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {message.cardData.projections?.map((row: any) => (
+                                      <tr key={row.year} className="text-gray-700 border-t border-gray-100">
+                                        <td className="py-1">{row.year}</td>
+                                        <td className="py-1">{row.revenue}</td>
+                                        <td className="py-1">{row.expenses}</td>
+                                        <td className="py-1">{row.runway}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'competitorAnalysis' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                              <h4 className="text-sm font-bold">Competitor Analysis</h4>
+                              <div className="space-y-2">
+                                {message.cardData.competitors?.map((competitor: any) => (
+                                  <div key={competitor.name} className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                                    <p className="text-xs font-semibold text-gray-900">{competitor.name}</p>
+                                    <p className="text-[11px] text-gray-600">Focus: {competitor.focus}</p>
+                                    <p className="text-[11px] text-gray-700">Edge: {competitor.edge}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'contentDraft' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                              <h4 className="text-sm font-bold">Content Draft</h4>
+                              <p className="text-xs font-semibold text-gray-900">{message.cardData.title}</p>
+                              <p className="text-xs text-gray-700">{message.cardData.hook}</p>
+                              <ul className="list-disc pl-4 text-xs text-gray-700 space-y-1">
+                                {message.cardData.outline?.map((item: string, index: number) => (
+                                  <li key={`${item}-${index}`}>{item}</li>
+                                ))}
+                              </ul>
+                              <p className="text-xs text-gray-600">CTA: {message.cardData.cta}</p>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'templatePack' && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                              <h4 className="text-sm font-bold">Template Pack</h4>
+                              <div className="space-y-2">
+                                {message.cardData.templates?.map((template: any) => (
+                                  <div key={template.name} className="rounded-lg border border-gray-200 bg-gray-50 p-2 flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold text-gray-900">{template.name}</p>
+                                      <p className="text-[11px] text-gray-600">{template.type}</p>
+                                    </div>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700">{template.tier}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {message.type === 'ai' && message.cardData?.type === 'deckInsights' && (
+                            <div className="mt-4 space-y-4">
+                              {message.cardData.cards?.map((card: any, index: number) => (
+                                <div key={`${card.type}-${index}`}>
+                                  {card.type === 'businessValidator' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <h4 className="text-sm font-bold">Business Validator</h4>
+                                        <span className="text-xs font-bold" style={{ color: brandColors.navyBlue }}>
+                                          {card.data?.score}/10
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-gray-700">{card.data?.verdict}</p>
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                                        <div>
+                                          <p className="font-semibold text-gray-900 mb-1">Strengths</p>
+                                          <ul className="list-disc pl-4 text-gray-700 space-y-1">
+                                            {card.data?.strengths?.map((item: string, idx: number) => (
+                                              <li key={`${item}-${idx}`}>{item}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                        <div>
+                                          <p className="font-semibold text-gray-900 mb-1">Risks</p>
+                                          <ul className="list-disc pl-4 text-gray-700 space-y-1">
+                                            {card.data?.risks?.map((item: string, idx: number) => (
+                                              <li key={`${item}-${idx}`}>{item}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                        <div>
+                                          <p className="font-semibold text-gray-900 mb-1">Next Steps</p>
+                                          <ul className="list-disc pl-4 text-gray-700 space-y-1">
+                                            {card.data?.nextSteps?.map((item: string, idx: number) => (
+                                              <li key={`${item}-${idx}`}>{item}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {card.type === 'financialProjection' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-3">
+                                      <h4 className="text-sm font-bold">Financial Projection</h4>
+                                      <div className="text-xs text-gray-700">
+                                        <p className="font-semibold mb-1">Assumptions</p>
+                                        <ul className="list-disc pl-4 space-y-1">
+                                          {card.data?.assumptions?.map((item: string, idx: number) => (
+                                            <li key={`${item}-${idx}`}>{item}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-xs text-left">
+                                          <thead>
+                                            <tr className="text-gray-500">
+                                              <th className="py-1">Year</th>
+                                              <th className="py-1">Revenue</th>
+                                              <th className="py-1">Expenses</th>
+                                              <th className="py-1">Runway</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {card.data?.projections?.map((row: any) => (
+                                              <tr key={row.year} className="text-gray-700 border-t border-gray-100">
+                                                <td className="py-1">{row.year}</td>
+                                                <td className="py-1">{row.revenue}</td>
+                                                <td className="py-1">{row.expenses}</td>
+                                                <td className="py-1">{row.runway}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {card.type === 'competitorAnalysis' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                                      <h4 className="text-sm font-bold">Competitor Analysis</h4>
+                                      <div className="space-y-2">
+                                        {card.data?.competitors?.map((competitor: any) => (
+                                          <div key={competitor.name} className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                                            <p className="text-xs font-semibold text-gray-900">{competitor.name}</p>
+                                            <p className="text-[11px] text-gray-600">Focus: {competitor.focus}</p>
+                                            <p className="text-[11px] text-gray-700">Edge: {competitor.edge}</p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {card.type === 'contentDraft' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                                      <h4 className="text-sm font-bold">Content Draft</h4>
+                                      <p className="text-xs font-semibold text-gray-900">{card.data?.title}</p>
+                                      <p className="text-xs text-gray-700">{card.data?.hook}</p>
+                                      <ul className="list-disc pl-4 text-xs text-gray-700 space-y-1">
+                                        {card.data?.outline?.map((item: string, idx: number) => (
+                                          <li key={`${item}-${idx}`}>{item}</li>
+                                        ))}
+                                      </ul>
+                                      <p className="text-xs text-gray-600">CTA: {card.data?.cta}</p>
+                                    </div>
+                                  )}
+
+                                  {card.type === 'templatePack' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                                      <h4 className="text-sm font-bold">Template Pack</h4>
+                                      <div className="space-y-2">
+                                        {card.data?.templates?.map((template: any) => (
+                                          <div key={template.name} className="rounded-lg border border-gray-200 bg-gray-50 p-2 flex items-center justify-between">
+                                            <div>
+                                              <p className="text-xs font-semibold text-gray-900">{template.name}</p>
+                                              <p className="text-[11px] text-gray-600">{template.type}</p>
+                                            </div>
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700">{template.tier}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 md:gap-2 mt-1 px-2 max-w-full overflow-hidden">
                           <span className="text-xs text-gray-500 truncate">{message.timestamp}</span>
@@ -966,7 +1791,7 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
         )}
       </AnimatePresence>
 
-      {/* Co-founder/Client Matching Modal */}
+      {/* Co-founder/Expert Matching Modal */}
       <AnimatePresence>
         {showCofounderModal && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCofounderModal(false)}>
@@ -979,7 +1804,11 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
             >
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold">
-                  {userRole === 'founder' ? 'Find Your Perfect Co-founder' : 'Find Ideal Clients'}
+                  {matchMode === 'experts'
+                    ? 'Find Expert Advisors'
+                    : matchMode === 'client'
+                      ? 'Find Ideal Clients'
+                      : 'Find Your Perfect Co-founder'}
                 </h2>
                 <button onClick={() => setShowCofounderModal(false)}>
                   <X className="w-5 h-5" />
@@ -989,7 +1818,7 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
               <div className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    {userRole === 'founder' ? 'Skills Needed' : 'Industry Focus'}
+                    {matchMode === 'experts' ? 'Expertise Needed' : matchMode === 'client' ? 'Industry Focus' : 'Skills Needed'}
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {['Technical', 'Marketing', 'Sales', 'Finance', 'Design', 'Operations'].map((skill) => (
@@ -1015,7 +1844,7 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
 
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    {userRole === 'founder' ? 'Commitment Level' : 'Client Stage'}
+                    {matchMode === 'client' ? 'Client Stage' : 'Commitment Level'}
                   </label>
                   <div className="space-y-2">
                     {['Full-time', 'Part-time', 'Flexible'].map((level) => (
@@ -1028,10 +1857,7 @@ export function IgnishaAIDashboard({ userRole }: IgnishaAIDashboardProps) {
                 </div>
 
                 <button
-                  onClick={() => {
-                    setShowCofounderModal(false);
-                    handleSendMessage('Find matches based on my criteria');
-                  }}
+                  onClick={handleMatchResults}
                   className="w-full py-3 rounded-lg font-bold text-white"
                   style={{ background: `linear-gradient(135deg, ${brandColors.electricBlue}, ${brandColors.atomicOrange})` }}
                 >
